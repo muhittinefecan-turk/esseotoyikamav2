@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F59E0B" />
+      <stop offset="100%" stop-color="#B45309" />
+    </linearGradient>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#18181b" />
+      <stop offset="100%" stop-color="#09090b" />
+    </linearGradient>
+  </defs>
+  <!-- Background with rounded squircle -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)" stroke="#F59E0B" stroke-width="8" stroke-opacity="0.3" />
+  
+  <!-- Outer glow circle -->
+  <circle cx="256" cy="256" r="180" fill="none" stroke="url(#goldGrad)" stroke-width="4" stroke-dasharray="16 8" opacity="0.6" />
+
+  <!-- Car Symbol / Detailing Icon -->
+  <path d="M120 290 L160 210 Q190 170 256 170 Q322 170 352 210 L392 290 L410 300 Q420 310 420 330 L420 370 Q420 380 410 380 L390 380 L390 410 Q390 420 370 420 L350 420 Q340 420 340 410 L340 380 L172 380 L172 410 Q172 420 152 420 L132 420 Q122 420 122 410 L122 380 L102 380 Q92 380 92 370 L92 330 Q92 310 102 300 Z" fill="url(#goldGrad)" />
+  
+  <!-- Car Windshield -->
+  <path d="M175 280 L200 220 Q215 195 256 195 Q297 195 312 220 L337 280 Z" fill="#09090b" />
+  
+  <!-- Text ESSE -->
+  <text x="256" y="140" font-family="'Plus Jakarta Sans', sans-serif" font-size="64" font-weight="900" fill="#F59E0B" text-anchor="middle" letter-spacing="4">ESSE</text>
+  <text x="256" y="470" font-family="'Plus Jakarta Sans', sans-serif" font-size="28" font-weight="800" fill="#FFFFFF" text-anchor="middle" letter-spacing="8" opacity="0.9">DETAILING</text>
+</svg>

@@ -1,0 +1,6 @@
+{
+  "name": "Esse Oto Yıkama & Detailing Randevu Sistemi",
+  "description": "Esse Oto Yıkama ve Detailing için hızlı, veri tabansız ve doğrudan WhatsApp entegrasyonlu online randevu sistemi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
