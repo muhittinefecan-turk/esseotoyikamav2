@@ -18,10 +18,12 @@ import {
   FileText,
   BadgeAlert,
   XCircle,
-  RotateCcw
+  RotateCcw,
+  Smartphone
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { AppointmentData, BusinessConfig } from '../types';
+import { usePWAInstall } from '../context/PWAInstallContext';
 import { formatDuration, formatTurkishDate } from '../utils/formatters';
 import { 
   buildWhatsAppMessage, 
@@ -53,6 +55,11 @@ export const Step4Confirmation: React.FC<Step4ConfirmationProps> = ({
   const [copiedMain, setCopiedMain] = useState(false);
   const [sentToWp, setSentToWp] = useState(appointment.status === 'sent_via_whatsapp');
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const { isInstalled, installApp } = usePWAInstall();
+
+  const handleInstallClick = async () => {
+    await installApp();
+  };
 
   const wpMainMessage = buildWhatsAppMessage(appointment, business);
   const wpMainUrl = getWhatsAppUrl(appointment, business);
@@ -335,6 +342,58 @@ export const Step4Confirmation: React.FC<Step4ConfirmationProps> = ({
           }`}>
             {wpMainMessage}
           </pre>
+        </div>
+
+        {/* PWA Install App in Step 4 */}
+        <div>
+          {isInstalled ? (
+            <div className="p-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs font-bold flex items-center justify-between gap-3 backdrop-blur-md">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                  <Check className="w-5 h-5 stroke-[2.5]" />
+                </div>
+                <div>
+                  <div className="text-xs font-black">Esse Oto Uygulaması Cihazınızda Kurulu</div>
+                  <div className="text-[11px] text-zinc-400 font-normal">
+                    Randevu fişinize ana ekranınızdaki uygulama üzerinden her an erişebilirsiniz.
+                  </div>
+                </div>
+              </div>
+              <span className="text-[10px] px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-500/30 shrink-0 uppercase">
+                Yüklü
+              </span>
+            </div>
+          ) : (
+            <div className={`p-4 rounded-3xl border transition-all glass-panel flex flex-col sm:flex-row items-center justify-between gap-3.5 ${
+              isDarkMode ? 'border-amber-500/35 bg-amber-500/[0.04]' : 'border-amber-500/30 bg-amber-50/60'
+            }`}>
+              <div className="flex items-center gap-3 text-center sm:text-left">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500 text-black flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/25">
+                  <Smartphone className="w-6 h-6 stroke-[2.2]" />
+                </div>
+                <div>
+                  <div className="text-sm font-black text-zinc-100 flex items-center justify-center sm:justify-start gap-1.5">
+                    <span>Uygulamayı Ana Ekrana Ekleyin</span>
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500 text-black font-extrabold uppercase">
+                      Hızlı Erişim
+                    </span>
+                  </div>
+                  <div className="text-xs text-zinc-400 mt-0.5 max-w-sm">
+                    Randevularınızı takip edin, tarayıcı çubuğu olmadan tam ekran mobil deneyimi yaşayın.
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleInstallClick}
+                className="w-full sm:w-auto px-5 py-3 rounded-2xl font-black text-xs sm:text-sm text-black glass-button flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer shadow-md shadow-amber-500/25 shrink-0"
+              >
+                <Download className="w-4 h-4 stroke-[2.5]" />
+                <span>Uygulamayı Yükle</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

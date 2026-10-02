@@ -1,9 +1,10 @@
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
+import { PWAInstallProvider } from './context/PWAInstallContext.tsx';
 import './index.css';
 
-// Register PWA Service Worker
-if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
+// Register PWA Service Worker unconditionally for full PWA installability
+if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('/sw.js')
@@ -16,4 +17,8 @@ if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
   });
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(document.getElementById('root')!).render(
+  <PWAInstallProvider>
+    <App />
+  </PWAInstallProvider>
+);

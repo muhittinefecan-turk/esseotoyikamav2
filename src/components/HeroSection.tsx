@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Star, Award, CheckCircle2, ChevronRight, Phone, Sparkles, Shield, Download, Smartphone } from 'lucide-react';
+import { Star, Award, CheckCircle2, ChevronRight, Phone, Sparkles, Shield, Download, Check } from 'lucide-react';
 import { BusinessConfig } from '../types';
+import { usePWAInstall } from '../context/PWAInstallContext';
 
 import heroImg from '../assets/images/esse_hero_detailing_1790959392176.jpg';
 import interiorImg from '../assets/images/esse_interior_care_1790959405690.jpg';
@@ -19,9 +20,10 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   onScrollToBooking,
 }) => {
   const [activePhotoTab, setActivePhotoTab] = useState<'wash' | 'interior' | 'ceramic'>('wash');
+  const { installApp, isInstalled } = usePWAInstall();
 
-  const handleOpenInstallModal = () => {
-    window.dispatchEvent(new CustomEvent('open-pwa-install'));
+  const handleInstallClick = async () => {
+    await installApp();
   };
 
   const photos = {
@@ -126,19 +128,26 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
               {/* HEMEN RANDEVU OLUŞTUR BUTONUNUN HEMEN ALTINDA UYGULAMAYI YÜKLE BUTONU */}
               <div className="flex justify-center lg:justify-start pt-1">
-                <button
-                  type="button"
-                  onClick={handleOpenInstallModal}
-                  className="w-full sm:w-auto px-5 py-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs sm:text-sm font-bold flex items-center justify-center gap-2.5 backdrop-blur-xl transition-all cursor-pointer shadow-md group active:scale-95"
-                >
-                  <div className="w-6 h-6 rounded-lg bg-amber-500 text-black flex items-center justify-center font-black shadow-sm group-hover:scale-110 transition-transform">
-                    <Download className="w-3.5 h-3.5 stroke-[2.8]" />
+                {isInstalled ? (
+                  <div className="px-4 py-2.5 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs font-bold flex items-center gap-2 backdrop-blur-md">
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    <span>Esse Oto Uygulaması Cihazınızda Yüklü</span>
                   </div>
-                  <span>Uygulamayı Cihazına Yükle (Ana Ekrana Ekle)</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/25 text-amber-200 font-extrabold border border-amber-500/35 uppercase">
-                    Mobil / PWA
-                  </span>
-                </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleInstallClick}
+                    className="w-full sm:w-auto px-5 py-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs sm:text-sm font-bold flex items-center justify-center gap-2.5 backdrop-blur-xl transition-all cursor-pointer shadow-md group active:scale-95"
+                  >
+                    <div className="w-6 h-6 rounded-lg bg-amber-500 text-black flex items-center justify-center font-black shadow-sm group-hover:scale-110 transition-transform">
+                      <Download className="w-3.5 h-3.5 stroke-[2.8]" />
+                    </div>
+                    <span>Uygulamayı Cihazına Yükle (Ana Ekrana Ekle)</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/25 text-amber-200 font-extrabold border border-amber-500/35 uppercase">
+                      PWA
+                    </span>
+                  </button>
+                )}
               </div>
             </div>
 
