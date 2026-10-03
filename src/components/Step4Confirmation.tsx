@@ -19,12 +19,14 @@ import {
   BadgeAlert,
   XCircle,
   RotateCcw,
-  Smartphone
+  Smartphone,
+  Image as ImageIcon
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { AppointmentData, BusinessConfig } from '../types';
 import { usePWAInstall } from '../context/PWAInstallContext';
 import { formatDuration, formatTurkishDate } from '../utils/formatters';
+import { downloadAppointmentTicketImage } from '../utils/ticketCanvas';
 import { 
   buildWhatsAppMessage, 
   getWhatsAppUrl, 
@@ -398,7 +400,18 @@ export const Step4Confirmation: React.FC<Step4ConfirmationProps> = ({
       </div>
 
       {/* Calendar & Export Options */}
-      <div className="max-w-2xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+      <div className="max-w-2xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+        <button
+          type="button"
+          onClick={() => downloadAppointmentTicketImage(appointment, business)}
+          className={`p-3 rounded-2xl border text-xs font-bold flex items-center justify-center gap-2 glass-pill transition-all cursor-pointer ${
+            isDarkMode ? 'text-amber-400 hover:bg-white/10 border-amber-500/30' : 'bg-white hover:bg-zinc-100 border-amber-500/40 text-amber-700'
+          }`}
+        >
+          <ImageIcon className="w-4 h-4 text-amber-400" />
+          <span>Bileti İndir (PNG)</span>
+        </button>
+
         <a
           href={googleCalUrl}
           target="_blank"
@@ -408,7 +421,7 @@ export const Step4Confirmation: React.FC<Step4ConfirmationProps> = ({
           }`}
         >
           <CalendarIcon className="w-4 h-4 text-amber-500" />
-          <span>Google Takvime Ekle</span>
+          <span>Google Takvim</span>
           <ExternalLink className="w-3 h-3 opacity-60" />
         </a>
 
@@ -420,7 +433,7 @@ export const Step4Confirmation: React.FC<Step4ConfirmationProps> = ({
           }`}
         >
           <Download className="w-4 h-4 text-emerald-400" />
-          <span>Takvim Dosyası (.ics)</span>
+          <span>Takvim (.ics)</span>
         </button>
 
         <button

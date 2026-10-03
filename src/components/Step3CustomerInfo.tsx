@@ -62,6 +62,28 @@ export const Step3CustomerInfo: React.FC<Step3CustomerInfoProps> = ({
   isDarkMode,
 }) => {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [rememberMe, setRememberMe] = useState<boolean>(true);
+  const [savedProfile, setSavedProfile] = useState<CustomerFormData | null>(() => {
+    try {
+      const stored = localStorage.getItem('esse_saved_customer');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const handleApplySavedProfile = () => {
+    if (savedProfile) {
+      onChange({
+        ...formData,
+        fullName: savedProfile.fullName || formData.fullName,
+        phone: savedProfile.phone || formData.phone,
+        email: savedProfile.email || formData.email,
+        plateNumber: savedProfile.plateNumber || formData.plateNumber,
+        carModel: savedProfile.carModel || formData.carModel,
+      });
+    }
+  };
 
   const handleInputChange = (field: keyof CustomerFormData, value: string) => {
     let cleaned = value;
@@ -126,6 +148,14 @@ export const Step3CustomerInfo: React.FC<Step3CustomerInfoProps> = ({
       return;
     }
 
+    if (rememberMe) {
+      try {
+        localStorage.setItem('esse_saved_customer', JSON.stringify(formData));
+      } catch (err) {
+        console.warn('LocalStorage error:', err);
+      }
+    }
+
     onNext();
   };
 
@@ -145,6 +175,27 @@ export const Step3CustomerInfo: React.FC<Step3CustomerInfoProps> = ({
           </p>
         </div>
       </div>
+
+      {/* Quick Auto-Fill if Saved Customer in LocalStorage */}
+      {savedProfile && (
+        <div className="p-3.5 rounded-2xl border border-amber-500/35 bg-amber-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5 text-zinc-200">
+            <span className="text-lg">🚗</span>
+            <div>
+              <span className="font-bold text-amber-400">Kayıtlı Araç Profiliniz: </span>
+              <span className="font-mono font-bold text-white">{savedProfile.plateNumber}</span>
+              <span className="text-zinc-400"> ({savedProfile.fullName})</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleApplySavedProfile}
+            className="px-3.5 py-1.5 rounded-xl bg-amber-500 text-black font-extrabold text-[11px] hover:bg-amber-400 transition-colors cursor-pointer shrink-0 shadow-sm"
+          >
+            Bilgileri Tek Tıkla Doldur
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
         {/* Ad Soyad */}
@@ -408,6 +459,19 @@ export const Step3CustomerInfo: React.FC<Step3CustomerInfoProps> = ({
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Remember Me Checkbox */}
+      <div className="p-3 rounded-2xl border border-white/5 bg-white/[0.02]">
+        <label className="flex items-center gap-3 text-xs text-zinc-300 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={rememberMe}
+            onChange={(e) => setRememberMe(e.target.checked)}
+            className="w-4 h-4 rounded text-amber-500 accent-amber-500 focus:ring-amber-400 cursor-pointer"
+          />
+          <span>Bu cihazda bilgilerimi güvenle hatırla (Sonraki randevularda formu otomatik doldurur)</span>
+        </label>
       </div>
 
       {/* Navigation Buttons (Mobile Optimized) */}

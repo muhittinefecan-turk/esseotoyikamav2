@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Plus, Clock, Car, Truck, Sparkles, Shield, Droplets, Wrench, ChevronRight, Table, Info } from 'lucide-react';
 import { ServiceItem, VehicleCategory } from '../types';
@@ -26,6 +27,17 @@ export const Step1Services: React.FC<Step1ServicesProps> = ({
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [showTableModal, setShowTableModal] = useState<boolean>(false);
 
+  useEffect(() => {
+    if (showTableModal) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showTableModal]);
+
   const vehicleConfig = VEHICLE_TYPES.find((v) => v.id === selectedVehicle) || VEHICLE_TYPES[0];
 
   const getServiceDuration = (service: ServiceItem) => {
@@ -40,97 +52,69 @@ export const Step1Services: React.FC<Step1ServicesProps> = ({
 
   return (
     <motion.div 
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: 'easeOut' }}
-      className="space-y-6 pb-28 sm:pb-32"
+      transition={{ duration: 0.4, ease: 'easeOut' }}
+      className="space-y-4 pb-24 sm:pb-28"
     >
-      {/* Vehicle Type Selector */}
-      <div>
-        <div className="flex items-center justify-between mb-2.5">
-          <label className="text-xs sm:text-sm font-bold tracking-wider uppercase text-zinc-400">
-            1. Araç Segmentini Seçin
-          </label>
-          <span className="text-[11px] text-amber-500 font-semibold">
-            İşlem süresi aracınıza göre ayarlanır
+      {/* 1. Compact Vehicle Segment Pill Selector */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs font-bold text-zinc-400 uppercase tracking-wider px-1">
+          <span>1. Araç Segmenti</span>
+          <span className="text-amber-400 text-[11px] font-semibold lowercase">
+            ~{vehicleConfig.timeExtraMinutes > 0 ? `+${vehicleConfig.timeExtraMinutes} dk` : 'standart süre'}
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
+        <div className={`grid grid-cols-3 gap-2 p-1.5 rounded-2xl border backdrop-blur-xl ${
+          isDarkMode ? 'bg-zinc-900/60 border-white/10' : 'bg-zinc-100/90 border-zinc-200'
+        }`}>
           {VEHICLE_TYPES.map((type) => {
             const isSelected = selectedVehicle === type.id;
             return (
-              <motion.button
+              <button
                 key={type.id}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
                 type="button"
                 onClick={() => onSelectVehicle(type.id)}
-                className={`relative p-3.5 sm:p-4 rounded-2xl border text-left transition-all cursor-pointer backdrop-blur-xl ${
+                className={`py-2 px-2 sm:px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                   isSelected
-                    ? isDarkMode
-                      ? 'bg-amber-500/20 border-amber-500 shadow-[0_8px_32px_rgba(245,158,11,0.25)] ring-1 ring-amber-500/50'
-                      : 'bg-amber-50 border-amber-500 shadow-md ring-1 ring-amber-500'
-                    : isDarkMode
-                    ? 'glass-panel border-white/10 hover:border-white/20 hover:bg-white/[0.06]'
-                    : 'bg-white border-zinc-200 hover:border-zinc-300 shadow-2xs'
+                    ? 'bg-amber-500 text-black shadow-md font-black scale-[1.02]'
+                    : isDarkMode 
+                    ? 'text-zinc-400 hover:text-zinc-100 hover:bg-white/5' 
+                    : 'text-zinc-600 hover:text-zinc-900 hover:bg-white'
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2.5 rounded-xl ${
-                      isSelected
-                        ? 'bg-amber-500 text-black shadow-md'
-                        : isDarkMode ? 'bg-white/10 text-zinc-300' : 'bg-zinc-100 text-zinc-600'
-                    }`}>
-                      {type.id === 'sedan' && <Car className="w-5 h-5" />}
-                      {type.id === 'suv' && <Car className="w-5 h-5 stroke-[2.2]" />}
-                      {type.id === 'commercial' && <Truck className="w-5 h-5" />}
-                    </div>
-                    <div>
-                      <div className="font-bold text-sm tracking-tight">{type.name}</div>
-                      <div className={`text-[11px] ${isDarkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                        {type.description}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className={`w-5 h-5 rounded-full flex items-center justify-center border transition-all ${
-                    isSelected
-                      ? 'bg-amber-500 border-amber-500 text-black'
-                      : isDarkMode ? 'border-white/20' : 'border-zinc-300'
-                  }`}>
-                    {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                  </div>
-                </div>
-              </motion.button>
+                {type.id === 'sedan' && <Car className="w-3.5 h-3.5" />}
+                {type.id === 'suv' && <Car className="w-3.5 h-3.5 stroke-[2.2]" />}
+                {type.id === 'commercial' && <Truck className="w-3.5 h-3.5" />}
+                <span className="truncate">{type.name}</span>
+                {isSelected && <Check className="w-3 h-3 stroke-[3] hidden sm:inline" />}
+              </button>
             );
           })}
         </div>
       </div>
 
-      {/* TOP INLINE SUMMARY & QUICK NEXT BUTTON */}
-      <div className={`p-3.5 sm:p-4 rounded-2xl border backdrop-blur-xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md ${
+      {/* 2. Top Quick Action Bar: Highlights Selection & Direct Jump to Available Hours */}
+      <div className={`p-3 rounded-2xl border backdrop-blur-xl flex items-center justify-between gap-3 shadow-md transition-all ${
         selectedServices.length > 0
-          ? 'glass-panel-amber border-amber-500/40 text-zinc-100'
-          : 'glass-panel border-white/10 text-zinc-400'
+          ? 'glass-panel-amber border-amber-500/50 text-zinc-100 ring-1 ring-amber-500/30'
+          : isDarkMode ? 'glass-panel border-white/10 text-zinc-400' : 'bg-white border-zinc-200 text-zinc-600'
       }`}>
-        <div className="flex items-center justify-between w-full sm:w-auto gap-4">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-amber-500 text-black font-black text-xs shadow-md">
-              {selectedServices.length}
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-amber-500 text-black font-black text-xs flex items-center justify-center shadow-sm">
+            {selectedServices.length}
+          </div>
+          <div>
+            <div className="text-xs font-extrabold text-zinc-100">
+              {selectedServices.length > 0 ? (
+                <span>Seçilen: <strong className="text-amber-400">{selectedServices.length} Hizmet</strong> (~{formatDuration(totalDuration)})</span>
+              ) : (
+                <span>Hizmet seçerek hemen randevu alın</span>
+              )}
             </div>
-            <div>
-              <div className="text-xs font-bold text-zinc-200">
-                {selectedServices.length > 0 ? (
-                  <span>Seçilen Hizmet: <strong className="text-amber-400">{selectedServices.length} Adet</strong></span>
-                ) : (
-                  <span>Lütfen aşağıdan hizmet seçiniz</span>
-                )}
-              </div>
-              <div className="text-[11px] text-zinc-400">
-                {totalDuration > 0 ? `Toplam İşlem Süresi: ~${formatDuration(totalDuration)}` : 'Süre otomatik hesaplanır'} · Fiyat: Araç başında
-              </div>
+            <div className="text-[10px] text-zinc-400 hidden sm:block">
+              Ücretsiz ön inceleme sonrası ödeme araç başında nakit / FAST
             </div>
           </div>
         </div>
@@ -139,31 +123,21 @@ export const Step1Services: React.FC<Step1ServicesProps> = ({
           type="button"
           disabled={selectedServices.length === 0}
           onClick={onNext}
-          className={`w-full sm:w-auto px-5 py-2.5 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`px-4 py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 ${
             selectedServices.length > 0
-              ? 'glass-button text-black active:scale-95 shadow-md shadow-amber-500/30'
-              : 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-60'
+              ? 'glass-button text-black active:scale-95 shadow-md shadow-amber-500/30 ring-1 ring-amber-400'
+              : 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50'
           }`}
         >
-          <span>Tarih & Saat Seçimine Geç</span>
-          <ChevronRight className="w-4 h-4" />
+          <span>Müsait Saatleri Gör</span>
+          <ChevronRight className="w-3.5 h-3.5 stroke-[2.5]" />
         </button>
       </div>
 
-      {/* Notice About Dynamic Pricing */}
-      <div className={`p-3.5 rounded-2xl border backdrop-blur-xl flex items-center gap-3 text-xs ${
-        isDarkMode ? 'glass-panel border-white/10 text-zinc-300' : 'bg-amber-50/70 border-amber-200 text-amber-950'
-      }`}>
-        <Info className="w-4 h-4 text-amber-500 shrink-0" />
-        <div className="leading-snug">
-          <strong>Fiyatlandırma:</strong> Araç boyutuna, boya ve kirlilik durumuna göre ücretsiz ön inceleme sonrasında araç başında netleştirilir.
-        </div>
-      </div>
-
-      {/* Category Tabs & Full Guide Modal Button */}
+      {/* 3. Category Tabs & Full Guide Modal Button */}
       <div>
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-3">
-          <label className="text-xs sm:text-sm font-bold tracking-wider uppercase text-zinc-400">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <label className="text-xs font-bold tracking-wider uppercase text-zinc-400">
             2. Hizmetleri Seçin
           </label>
 
@@ -292,17 +266,51 @@ export const Step1Services: React.FC<Step1ServicesProps> = ({
                   )}
                 </div>
 
-                {/* Duration & Price Notice */}
-                <div className="mt-4 pt-3 flex items-center justify-between border-t border-white/10 text-xs">
-                  <div className="flex items-center gap-1.5 font-bold text-amber-500">
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>Tahmini Süre: ~{formatDuration(duration)}</span>
+                {/* Duration Pill Badge & Price Status */}
+                <div className="mt-4 pt-3 flex items-center justify-between gap-2 border-t border-white/10">
+                  {/* Highlighted Duration Pill Badge */}
+                  <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black tracking-wide border shadow-sm backdrop-blur-md transition-all ${
+                    isSelected
+                      ? 'bg-amber-500/30 border-amber-400 text-amber-300 shadow-[0_0_14px_rgba(245,158,11,0.3)]'
+                      : isDarkMode
+                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 group-hover:bg-amber-500/20 group-hover:border-amber-500/50'
+                      : 'bg-amber-100/80 border-amber-300 text-amber-900'
+                  }`}>
+                    <Clock className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <span>~{formatDuration(duration)}</span>
                   </div>
 
-                  <span className="text-[11px] font-semibold text-zinc-400">
-                    Yerinde Fiyat
-                  </span>
+                  {/* Status Pill Badge */}
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full border tracking-wider transition-colors ${
+                      isSelected
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm'
+                        : isDarkMode
+                        ? 'bg-white/[0.04] text-zinc-400 border-white/10 group-hover:text-zinc-200'
+                        : 'bg-zinc-100 text-zinc-600 border-zinc-200'
+                    }`}>
+                      {isSelected ? '✓ Eklendi' : 'Yerinde Fiyat'}
+                    </span>
+                  </div>
                 </div>
+
+                {/* Direct Action: Jump to Available Times Immediately */}
+                {isSelected && (
+                  <motion.button
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onNext();
+                    }}
+                    className="mt-3 w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/30 active:scale-98 transition-transform cursor-pointer"
+                  >
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Müsait Saatleri Gör ve Randevu Al</span>
+                    <ChevronRight className="w-3.5 h-3.5 stroke-[3]" />
+                  </motion.button>
+                )}
               </motion.div>
             );
           })}
@@ -339,41 +347,52 @@ export const Step1Services: React.FC<Step1ServicesProps> = ({
         </button>
       </div>
 
-      {/* FIXED VIEWPORT BOTTOM BAR */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 p-3 sm:p-4 bg-zinc-950/95 backdrop-blur-2xl border-t border-white/15 shadow-[0_-10px_35px_rgba(0,0,0,0.8)]">
-        <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
-          <div className="flex flex-col">
-            <span className="text-[11px] text-zinc-400">
-              Seçilen: <strong className="text-amber-400">{selectedServices.length} Hizmet</strong>
-            </span>
-            <span className="text-xs font-black text-zinc-100 truncate">
-              {totalDuration > 0 ? `~${formatDuration(totalDuration)}` : 'Hizmet seçin'}
-            </span>
+      {/* FIXED VIEWPORT BOTTOM BAR rendered via Portal directly to document.body so it stays truly fixed on screen */}
+      {typeof document !== 'undefined' && createPortal(
+        <div className={`fixed bottom-0 left-0 right-0 z-40 p-3 sm:p-4 backdrop-blur-2xl border-t shadow-[0_-10px_35px_rgba(0,0,0,0.85)] transition-all ${
+          isDarkMode ? 'bg-zinc-950/95 border-white/15 text-zinc-100' : 'bg-white/95 border-zinc-200 text-zinc-900'
+        }`}>
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex flex-col">
+              <span className="text-[11px] text-zinc-400">
+                Seçilen: <strong className="text-amber-400">{selectedServices.length} Hizmet</strong>
+              </span>
+              <span className="text-xs font-black truncate">
+                {totalDuration > 0 ? `~${formatDuration(totalDuration)} (Tahmini Süre)` : 'Hizmet seçin'}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              disabled={selectedServices.length === 0}
+              onClick={onNext}
+              className={`px-5 sm:px-7 py-3 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                selectedServices.length > 0
+                  ? 'glass-button text-black active:scale-95 shadow-lg shadow-amber-500/30 ring-1 ring-amber-400'
+                  : 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50'
+              }`}
+            >
+              <span>Tarih & Saat Seçimine Geç</span>
+              <ChevronRight className="w-4 h-4 stroke-[2.5]" />
+            </button>
           </div>
+        </div>,
+        document.body
+      )}
 
-          <button
-            type="button"
-            disabled={selectedServices.length === 0}
-            onClick={onNext}
-            className={`px-5 sm:px-7 py-3 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              selectedServices.length > 0
-                ? 'glass-button text-black active:scale-95 shadow-md shadow-amber-500/30'
-                : 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50'
+      {/* Full Services Modal Guide rendered via Portal to viewport */}
+      {showTableModal && typeof document !== 'undefined' && createPortal(
+        <div 
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-md animate-fade-in"
+          onClick={() => setShowTableModal(false)}
+        >
+          <div 
+            className={`w-full max-w-3xl rounded-3xl border shadow-2xl overflow-hidden glass-panel max-h-[85vh] flex flex-col ${
+              isDarkMode ? 'border-white/15 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900'
             }`}
+            onClick={(e) => e.stopPropagation()}
           >
-            <span>Tarih & Saat Seçimine Geç</span>
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Full Services Modal Guide */}
-      {showTableModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md">
-          <div className={`w-full max-w-3xl rounded-3xl border shadow-2xl overflow-hidden glass-panel ${
-            isDarkMode ? 'border-white/15 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900'
-          }`}>
-            <div className="p-4 sm:p-5 flex items-center justify-between border-b border-white/10">
+            <div className="p-4 sm:p-5 flex items-center justify-between border-b border-white/10 shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
                   <Table className="w-5 h-5" />
@@ -381,19 +400,20 @@ export const Step1Services: React.FC<Step1ServicesProps> = ({
                 <div>
                   <h3 className="font-extrabold text-base">Hizmet Kataloğu & Tahmini Süreler</h3>
                   <p className="text-xs text-zinc-400">
-                    Esse Oto Yıkama tüm hizmet açıklamaları ve ortalama süreleri.
+                    Esse Oto Yıkama tüm hizmet açıklamaları ve araç tipine göre süreleri.
                   </p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setShowTableModal(false)}
-                className="px-3 py-1.5 rounded-xl border border-white/10 text-xs font-bold cursor-pointer hover:bg-white/10"
+                className="px-3.5 py-1.5 rounded-xl border border-white/10 text-xs font-bold cursor-pointer hover:bg-white/10 transition-colors"
               >
                 Kapat ✕
               </button>
             </div>
 
-            <div className="p-3 sm:p-4 max-h-[70vh] overflow-y-auto space-y-2.5">
+            <div className="p-3 sm:p-5 overflow-y-auto space-y-3 flex-1">
               {SERVICES_LIST.map((srv) => {
                 const duration = getServiceDuration(srv);
                 const isSelected = selectedServices.some((s) => s.id === srv.id);
@@ -401,7 +421,7 @@ export const Step1Services: React.FC<Step1ServicesProps> = ({
                 return (
                   <div
                     key={srv.id}
-                    className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 backdrop-blur-md ${
+                    className={`p-3.5 sm:p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 backdrop-blur-md transition-all ${
                       isSelected
                         ? 'border-amber-500 bg-amber-500/15'
                         : isDarkMode ? 'border-white/10 bg-white/[0.02]' : 'border-zinc-200 bg-zinc-50'
@@ -430,9 +450,9 @@ export const Step1Services: React.FC<Step1ServicesProps> = ({
                       <button
                         type="button"
                         onClick={() => onToggleService(srv)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                           isSelected
-                            ? 'bg-amber-500 text-black'
+                            ? 'bg-amber-500 text-black shadow-md shadow-amber-500/25'
                             : isDarkMode ? 'bg-white/10 hover:bg-white/20 text-zinc-200' : 'bg-zinc-200 hover:bg-zinc-300 text-zinc-800'
                         }`}
                       >
@@ -444,7 +464,8 @@ export const Step1Services: React.FC<Step1ServicesProps> = ({
               })}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </motion.div>
   );

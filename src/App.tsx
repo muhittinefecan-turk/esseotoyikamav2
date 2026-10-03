@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Navbar } from './components/Navbar';
-import { HeroSection } from './components/HeroSection';
+import { CompactHeroBar } from './components/HeroSection';
 import { BookingStepper } from './components/BookingStepper';
 import { Step1Services } from './components/Step1Services';
 import { Step2DateTime } from './components/Step2DateTime';
@@ -17,6 +17,12 @@ import { LocationAndHours } from './components/LocationAndHours';
 import { ReviewsSection } from './components/ReviewsSection';
 import { Footer } from './components/Footer';
 import { InstallPwaPrompt } from './components/InstallPwaPrompt';
+import { BeforeAfterSlider } from './components/BeforeAfterSlider';
+import { DetailingCostSimulator } from './components/DetailingCostSimulator';
+import { LoyaltyCardModal } from './components/LoyaltyCardModal';
+import { CountdownWidget } from './components/CountdownWidget';
+import { CarCareGuide } from './components/CarCareGuide';
+import { FaqSection } from './components/FaqSection';
 
 import { 
   AppointmentData, 
@@ -76,8 +82,16 @@ export default function App() {
 
   // Appointments Modal
   const [isAppointmentsModalOpen, setIsAppointmentsModalOpen] = useState(false);
+  const [isLoyaltyModalOpen, setIsLoyaltyModalOpen] = useState(false);
 
   const bookingRef = useRef<HTMLDivElement>(null);
+
+  const handleApplySimulatorPackage = (vehicle: VehicleCategory, services: ServiceItem[]) => {
+    setSelectedVehicle(vehicle);
+    setSelectedServices(services);
+    setCurrentStep(1);
+    scrollToBooking();
+  };
 
   // Sync dark mode class
   useEffect(() => {
@@ -203,36 +217,48 @@ export default function App() {
         isDarkMode={isDarkMode}
         onToggleTheme={() => setIsDarkMode((prev) => !prev)}
         onOpenAppointments={() => setIsAppointmentsModalOpen(true)}
+        onOpenLoyalty={() => setIsLoyaltyModalOpen(true)}
         appointmentsCount={appointments.length}
       />
 
       <main className="flex-1">
-        {/* Hero Section with Glassmorphism and Real Visuals */}
-        <HeroSection
+        {/* Compact Trust & Header Strip - Takes minimal vertical height so booking is instantly on-screen */}
+        <CompactHeroBar
           business={business}
           isDarkMode={isDarkMode}
-          onScrollToBooking={scrollToBooking}
         />
 
-        {/* Booking App Area */}
-        <div ref={bookingRef} className="py-6 sm:py-10 max-w-4xl mx-auto px-3 sm:px-6">
-          <BookingStepper
-            currentStep={currentStep}
-            onStepClick={(step) => {
-              setCurrentStep(step);
-              scrollToBooking();
-            }}
-            isDarkMode={isDarkMode}
-          />
+        {/* Live Appointment Countdown Widget (If appointment exists) */}
+        <CountdownWidget
+          appointment={activeAppointment || (appointments.length > 0 ? appointments[0] : null)}
+          isDarkMode={isDarkMode}
+          onViewAppointment={() => setIsAppointmentsModalOpen(true)}
+        />
+
+        {/* Booking App Area - DIRECTLY AT TOP WITHOUT SCROLLING */}
+        <div ref={bookingRef} className="pt-2 pb-8 max-w-4xl mx-auto px-3 sm:px-6">
+          {/* Sticky Stepper Bar - Stays Fixed on Screen */}
+          <div className={`sticky top-14 sm:top-16 z-30 pt-2 pb-1 backdrop-blur-2xl transition-all ${
+            isDarkMode ? 'bg-zinc-950/85' : 'bg-white/85'
+          }`}>
+            <BookingStepper
+              currentStep={currentStep}
+              onStepClick={(step) => {
+                setCurrentStep(step);
+                scrollToBooking();
+              }}
+              isDarkMode={isDarkMode}
+            />
+          </div>
 
           {/* Stepper Views with Soft Fade-In-Up Page Transitions */}
-          <div className="mt-4 sm:mt-6">
+          <div className="mt-3 sm:mt-5">
             <AnimatePresence mode="wait">
               <motion.div
                 key={currentStep}
-                initial={{ opacity: 0, y: 24, filter: 'blur(4px)' }}
+                initial={{ opacity: 0, y: 20, filter: 'blur(3px)' }}
                 animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                exit={{ opacity: 0, y: -18, filter: 'blur(4px)' }}
+                exit={{ opacity: 0, y: -16, filter: 'blur(3px)' }}
                 transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
               >
                 {currentStep === 1 && (
@@ -300,8 +326,23 @@ export default function App() {
           </div>
         </div>
 
+        {/* 1. Interactive Before / After Comparison Slider */}
+        <BeforeAfterSlider isDarkMode={isDarkMode} />
+
+        {/* 2. Interactive Detailing Package & Duration Simulator */}
+        <DetailingCostSimulator
+          isDarkMode={isDarkMode}
+          onApplyPackage={handleApplySimulatorPackage}
+        />
+
+        {/* 3. Seasonal Car Care Guide & Intervals */}
+        <CarCareGuide isDarkMode={isDarkMode} />
+
         {/* Working Hours & Location Map */}
         <LocationAndHours business={business} isDarkMode={isDarkMode} />
+
+        {/* 4. Searchable Interactive FAQ Section */}
+        <FaqSection isDarkMode={isDarkMode} />
 
         {/* Customer Reviews */}
         <ReviewsSection isDarkMode={isDarkMode} />
@@ -316,6 +357,13 @@ export default function App() {
 
       {/* PWA In-App Install Prompt Banner */}
       <InstallPwaPrompt isDarkMode={isDarkMode} />
+
+      {/* Digital Loyalty Stamp Card Modal */}
+      <LoyaltyCardModal
+        isOpen={isLoyaltyModalOpen}
+        onClose={() => setIsLoyaltyModalOpen(false)}
+        isDarkMode={isDarkMode}
+      />
 
       {/* My Stored Appointments Modal */}
       <MyAppointmentsModal

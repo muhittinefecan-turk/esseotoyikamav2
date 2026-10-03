@@ -1,5 +1,5 @@
 import React from 'react';
-import { Phone, MessageSquare, Sun, Moon, Calendar } from 'lucide-react';
+import { Phone, MessageSquare, Sun, Moon, Calendar, Gift } from 'lucide-react';
 import { BusinessConfig } from '../types';
 
 interface NavbarProps {
@@ -7,6 +7,7 @@ interface NavbarProps {
   isDarkMode: boolean;
   onToggleTheme: () => void;
   onOpenAppointments: () => void;
+  onOpenLoyalty: () => void;
   appointmentsCount: number;
 }
 
@@ -15,6 +16,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   isDarkMode,
   onToggleTheme,
   onOpenAppointments,
+  onOpenLoyalty,
   appointmentsCount,
 }) => {
   return (
@@ -72,6 +74,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             <MessageSquare className="w-3.5 h-3.5" />
             <span className="hidden xs:inline">WhatsApp</span>
           </a>
+
+          {/* Digital Loyalty Card Button */}
+          <button
+            onClick={onOpenLoyalty}
+            className={`p-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+              isDarkMode ? 'hover:bg-white/10 text-amber-400 border border-white/5' : 'hover:bg-zinc-100 text-amber-600 border border-zinc-200'
+            }`}
+            title="Dijital Sadakat / Yıkama Kartım"
+            aria-label="Sadakat Kartı"
+          >
+            <Gift className="w-4 h-4" />
+            <span className="hidden md:inline text-xs font-bold">Kartım</span>
+          </button>
 
           {/* Stored Appointments Button */}
           <button
