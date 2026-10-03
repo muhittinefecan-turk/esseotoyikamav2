@@ -1,5 +1,5 @@
 import React from 'react';
-import { Phone, MessageSquare, Sun, Moon, Calendar, Gift } from 'lucide-react';
+import { Phone, MessageSquare, Sun, Moon, Calendar, Gift, Shield } from 'lucide-react';
 import { BusinessConfig } from '../types';
 
 interface NavbarProps {
@@ -8,6 +8,7 @@ interface NavbarProps {
   onToggleTheme: () => void;
   onOpenAppointments: () => void;
   onOpenLoyalty: () => void;
+  onOpenAdmin?: () => void;
   appointmentsCount: number;
 }
 
@@ -17,6 +18,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleTheme,
   onOpenAppointments,
   onOpenLoyalty,
+  onOpenAdmin,
   appointmentsCount,
 }) => {
   return (
@@ -104,6 +106,23 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             )}
           </button>
+
+          {/* Admin Dashboard Entry Button */}
+          {onOpenAdmin && (
+            <button
+              onClick={onOpenAdmin}
+              className={`p-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                isDarkMode 
+                  ? 'hover:bg-amber-500/10 text-zinc-400 hover:text-amber-400 border border-white/5 hover:border-amber-500/30' 
+                  : 'hover:bg-amber-50 text-zinc-600 hover:text-amber-600 border border-zinc-200 hover:border-amber-300'
+              }`}
+              title="Yönetim Paneli (/admin)"
+              aria-label="Yönetim Paneli"
+            >
+              <Shield className="w-4 h-4 text-amber-500" />
+              <span className="hidden xl:inline text-xs font-bold">Admin</span>
+            </button>
+          )}
 
           {/* Theme Toggle Button */}
           <button

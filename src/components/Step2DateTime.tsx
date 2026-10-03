@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
-import { Calendar as CalendarIcon, Clock, ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, Car, Ban } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, Car, Ban, Sparkles } from 'lucide-react';
 import { formatTurkishDate } from '../utils/formatters';
 import { AppointmentData } from '../types';
 
@@ -134,9 +135,9 @@ export const Step2DateTime: React.FC<Step2DateTimeProps> = ({
         const slotName = `${slotNum}. Peron`;
         const fullTimeLabel = `${hw.label} (${slotName})`;
 
-        // Check if actually booked in existing appointments
+        // Check if actually booked in existing appointments (cancelled appointments do not block slots)
         const isBooked = existingAppointments.some((apt) => {
-          if (apt.date !== selectedDate) return false;
+          if (apt.date !== selectedDate || apt.status === 'cancelled') return false;
           return (
             apt.time === fullTimeLabel ||
             (apt.time.startsWith(hw.label.split(' - ')[0]) && apt.time.includes(`${slotNum}.`)) ||
@@ -154,14 +155,16 @@ export const Step2DateTime: React.FC<Step2DateTimeProps> = ({
         };
       });
 
-      const availableCount = slots.filter((s) => s.isAvailable).length;
+      const availableSlots = slots.filter((s) => s.isAvailable);
+      const availableCount = availableSlots.length;
       const bookedCount = slots.filter((s) => s.isBooked).length;
-      const isAllFull = availableCount === 0 && !isPast;
+      const isAllFull = availableCount === 0;
 
       return {
         windowLabel: hw.label,
         isPast,
         slots,
+        availableSlots,
         availableCount,
         bookedCount,
         isAllFull,
@@ -169,29 +172,60 @@ export const Step2DateTime: React.FC<Step2DateTimeProps> = ({
     });
   }, [selectedDate, currentTime, existingAppointments]);
 
-  const totalAvailableSlots = useMemo(() => {
-    return hourWindowsData.reduce((acc, hw) => acc + hw.availableCount, 0);
+  // HIDE PAST HOURS & COMPLETELY FULL HOURS: Only show windows that are currently active/available
+  const visibleHourWindows = useMemo(() => {
+    return hourWindowsData.filter((hw) => !hw.isPast && hw.availableCount > 0);
   }, [hourWindowsData]);
+
+  // Find the fastest available slot
+  const firstAvailableSlot = useMemo(() => {
+    for (const hw of visibleHourWindows) {
+      for (const s of hw.slots) {
+        if (s.isAvailable) {
+          return {
+            windowLabel: hw.windowLabel,
+            slotName: s.slotName,
+            fullTimeLabel: s.fullTimeLabel,
+          };
+        }
+      }
+    }
+    return null;
+  }, [visibleHourWindows]);
+
+  const totalAvailableSlots = useMemo(() => {
+    return visibleHourWindows.reduce((acc, hw) => acc + hw.availableCount, 0);
+  }, [visibleHourWindows]);
+
+  const isTodaySelected = useMemo(() => {
+    if (!selectedDate) return false;
+    const [year, month, day] = selectedDate.split('-').map(Number);
+    return (
+      currentTime.getFullYear() === year &&
+      currentTime.getMonth() === month - 1 &&
+      currentTime.getDate() === day
+    );
+  }, [selectedDate, currentTime]);
 
   return (
     <motion.div 
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: 'easeOut' }}
-      className="space-y-6 sm:space-y-8 pb-20"
+      transition={{ duration: 0.4, ease: 'easeOut' }}
+      className="space-y-5 pb-28 sm:pb-32"
     >
-      {/* Real-Time Live Status Bar */}
-      <div className={`p-4 rounded-3xl border glass-panel flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg ${
-        isDarkMode ? 'border-white/15' : 'bg-emerald-50/90 border-emerald-200'
+      {/* Live Status Strip */}
+      <div className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md backdrop-blur-xl ${
+        isDarkMode ? 'glass-panel border-white/10' : 'bg-emerald-50/90 border-emerald-200'
       }`}>
         <div className="flex items-center gap-2.5">
-          <span className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
           <div>
             <div className="text-xs font-black text-emerald-400">
-              Canlı İstasyon Kapasitesi: 4 Peron / Saat
+              Canlı Peron Kapasitesi: 4 Bağımsız Peron / Saat
             </div>
             <div className="text-[11px] text-zinc-400">
-              Her saat dilimi için 4 bağımsız araç yıkama ve kuaför peronu bulunmaktadır.
+              Yıkama, kuaför ve seramik işlemleri için gerçek zamanlı peron seçimi
             </div>
           </div>
         </div>
@@ -200,20 +234,51 @@ export const Step2DateTime: React.FC<Step2DateTimeProps> = ({
           <span className="font-mono text-zinc-300 font-bold bg-white/10 px-2.5 py-1 rounded-xl">
             Saat: {liveTimeString}
           </span>
-          <span className="font-bold text-amber-400">
+          <span className="font-extrabold text-amber-400 bg-amber-500/10 border border-amber-500/25 px-2.5 py-1 rounded-xl">
             {totalAvailableSlots} Müsait Yer
           </span>
         </div>
       </div>
 
-      {/* Date Carousel */}
+      {/* FAST 1-CLICK ACTION: FASTEST AVAILABLE SLOT */}
+      {firstAvailableSlot && (
+        <div className="p-3.5 rounded-2xl glass-panel-amber border border-amber-500/50 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-500 text-black flex items-center justify-center font-black shadow-md shrink-0">
+              <Sparkles className="w-4 h-4 stroke-[2.5]" />
+            </div>
+            <div>
+              <div className="text-xs font-black text-amber-400">
+                En Erken Müsait Randevu: {firstAvailableSlot.fullTimeLabel}
+              </div>
+              <div className="text-[11px] text-zinc-300">
+                Beklemeden hemen peronunuzu ayırtmak için tek tıkla seçebilirsiniz.
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              onSelectTime(firstAvailableSlot.fullTimeLabel);
+              onNext();
+            }}
+            className="w-full sm:w-auto px-4 py-2 rounded-xl glass-button text-black font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/30 cursor-pointer active:scale-95 shrink-0"
+          >
+            <span>Hızlıca Seç & Bilgilere Geç</span>
+            <ChevronRight className="w-3.5 h-3.5 stroke-[3]" />
+          </button>
+        </div>
+      )}
+
+      {/* 1. Date Carousel */}
       <div>
-        <div className="flex items-center justify-between mb-3">
-          <label className="text-xs sm:text-sm font-bold tracking-wider uppercase text-zinc-400 flex items-center gap-2">
-            <CalendarIcon className="w-4 h-4 text-amber-500" />
-            <span>1. Randevu Gününü Seçin (Pazar Günleri Kapalıdır)</span>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs font-bold tracking-wider uppercase text-zinc-400 flex items-center gap-1.5">
+            <CalendarIcon className="w-3.5 h-3.5 text-amber-500" />
+            <span>1. Randevu Gününü Seçin</span>
           </label>
-          <span className="text-xs text-amber-400 font-bold">
+          <span className="text-xs text-amber-400 font-extrabold">
             {formatTurkishDate(selectedDate)}
           </span>
         </div>
@@ -224,14 +289,12 @@ export const Step2DateTime: React.FC<Step2DateTimeProps> = ({
             const isSunday = d.isSunday;
 
             return (
-              <motion.button
+              <button
                 key={d.dateString}
-                whileHover={!isSunday ? { scale: 1.04 } : {}}
-                whileTap={!isSunday ? { scale: 0.96 } : {}}
                 type="button"
                 disabled={isSunday}
                 onClick={() => !isSunday && onSelectDate(d.dateString)}
-                className={`flex flex-col items-center justify-center p-3 rounded-2xl border text-center transition-all backdrop-blur-xl ${
+                className={`flex flex-col items-center justify-center p-2.5 rounded-2xl border text-center transition-all backdrop-blur-xl ${
                   isSunday
                     ? 'opacity-35 bg-zinc-900/40 border-white/5 cursor-not-allowed text-zinc-500'
                     : isSelected
@@ -247,64 +310,74 @@ export const Step2DateTime: React.FC<Step2DateTimeProps> = ({
                   {isSunday ? 'Pazar' : d.isToday ? 'Bugün' : d.isTomorrow ? 'Yarın' : d.dayName}
                 </span>
 
-                <span className="text-lg font-black mt-1">
+                <span className="text-base font-black my-0.5">
                   {d.dayNumber}
                 </span>
 
-                <span className={`text-[10px] ${
+                <span className={`text-[9px] ${
                   isSelected ? 'text-black/80 font-bold' : isDarkMode ? 'text-zinc-400' : 'text-zinc-500'
                 }`}>
                   {isSunday ? 'Kapalı' : d.monthName}
                 </span>
-
-                {isSunday && (
-                  <span className="text-[9px] mt-1 px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                    Kapalı
-                  </span>
-                )}
-              </motion.button>
+              </button>
             );
           })}
         </div>
       </div>
 
-      {/* 4 SLOTS PER HOUR WINDOW */}
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-          <label className="text-xs sm:text-sm font-bold tracking-wider uppercase text-zinc-400 flex items-center gap-2">
-            <Clock className="w-4 h-4 text-amber-500" />
-            <span>2. Saat ve İstasyon Peronunu Seçin</span>
+      {/* 2. Available Hours & Peron Grid (Past hours completely hidden!) */}
+      <div className="space-y-3">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1">
+          <label className="text-xs font-bold tracking-wider uppercase text-zinc-400 flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5 text-amber-500" />
+            <span>2. Müsait Saat & İstasyon Peronu</span>
           </label>
 
           <div className="flex items-center gap-3 text-[11px]">
-            <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+            <span className="flex items-center gap-1 text-emerald-400 font-bold">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
               Müsait (Boş)
             </span>
-            <span className="flex items-center gap-1.5 text-rose-400 font-bold">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-              Dolu (Rezerve)
-            </span>
-            <span className="flex items-center gap-1.5 text-zinc-500">
-              <span className="w-2.5 h-2.5 rounded-full bg-zinc-600" />
-              Geçmiş
+            <span className="flex items-center gap-1 text-rose-400 font-bold">
+              <span className="w-2 h-2 rounded-full bg-rose-500" />
+              Dolu
             </span>
           </div>
         </div>
 
-        {/* Hour Windows Grid */}
-        <div className="space-y-3.5">
-          {hourWindowsData.map((hw) => {
-            const isWindowPast = hw.isPast;
+        {/* If no hours left today, auto prompt tomorrow */}
+        {visibleHourWindows.length === 0 && (
+          <div className="p-5 rounded-3xl border border-amber-500/40 bg-amber-500/10 text-amber-200 text-center space-y-3 backdrop-blur-xl">
+            <div className="font-extrabold text-sm text-zinc-100">
+              {isTodaySelected 
+                ? 'Bugün için çalışma saatlerimiz tamamlanmıştır.' 
+                : 'Seçilen gün için peronlar doludur veya kapalıdır.'}
+            </div>
+            <p className="text-xs text-zinc-300 max-w-md mx-auto">
+              Yarın sabah 08:30'dan itibaren tüm istasyon peronlarımız açık ve müsaittir. Sıra beklemeden randevunuzu hemen oluşturabilirsiniz.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                const nextOpenDay = availableDates.find((d) => !d.isSunday && !d.isToday);
+                if (nextOpenDay) onSelectDate(nextOpenDay.dateString);
+              }}
+              className="px-6 py-2.5 rounded-xl glass-button text-black font-black text-xs inline-flex items-center gap-2 shadow-lg shadow-amber-500/30 cursor-pointer active:scale-95"
+            >
+              <span>Yarın İçin Müsait Saatleri Göster</span>
+              <ChevronRight className="w-4 h-4 stroke-[2.5]" />
+            </button>
+          </div>
+        )}
 
+        {/* Visible Hour Windows Grid */}
+        <div className="space-y-3">
+          {visibleHourWindows.map((hw) => {
             return (
-              <motion.div
+              <div
                 key={hw.windowLabel}
-                layout
-                className={`p-4 sm:p-5 rounded-3xl border transition-all ${
-                  isWindowPast
-                    ? 'opacity-40 bg-white/[0.01] border-white/5'
-                    : hw.isAllFull
+                className={`p-3.5 sm:p-4 rounded-2xl border transition-all ${
+                  hw.isAllFull
                     ? 'bg-rose-500/5 border-rose-500/20'
                     : isDarkMode
                     ? 'glass-panel border-white/10 hover:border-white/20'
@@ -312,36 +385,25 @@ export const Step2DateTime: React.FC<Step2DateTimeProps> = ({
                 }`}
               >
                 {/* Hour Window Header */}
-                <div className="flex items-center justify-between mb-3 border-b border-white/10 pb-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <div className={`p-2 rounded-xl text-xs font-black flex items-center gap-1.5 ${
-                      isWindowPast
-                        ? 'bg-zinc-800 text-zinc-500'
-                        : hw.isAllFull
-                        ? 'bg-rose-500/20 text-rose-400'
-                        : 'bg-amber-500/15 text-amber-400 border border-amber-500/25'
-                    }`}>
+                <div className="flex items-center justify-between mb-2.5 border-b border-white/10 pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 bg-amber-500/15 text-amber-400 border border-amber-500/25">
                       <Clock className="w-3.5 h-3.5" />
                       <span>{hw.windowLabel}</span>
                     </div>
 
-                    <span className="text-xs font-bold text-zinc-300 hidden sm:inline">
-                      (4 Farklı Randevu Slotu)
+                    <span className="text-[11px] font-bold text-zinc-400 hidden sm:inline">
+                      (4 Bağımsız İstasyon Peronu)
                     </span>
                   </div>
 
-                  {/* Capacity Badge */}
                   <div>
-                    {isWindowPast ? (
-                      <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-500">
-                        Geçmiş Saat
-                      </span>
-                    ) : hw.isAllFull ? (
-                      <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                    {hw.isAllFull ? (
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30">
                         4/4 Dolu
                       </span>
                     ) : (
-                      <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                         {hw.availableCount} / 4 Müsait
                       </span>
                     )}
@@ -349,26 +411,18 @@ export const Step2DateTime: React.FC<Step2DateTimeProps> = ({
                 </div>
 
                 {/* 4 Distinct Slots for this Hour */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {hw.slots.map((slot) => {
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {hw.availableSlots.map((slot) => {
                     const isSelected = selectedTime === slot.fullTimeLabel || selectedTime === `${hw.windowLabel.split(' - ')[0]} (${slot.slotName})`;
-                    const isSlotDisabled = slot.isPast || slot.isBooked;
 
                     return (
-                      <motion.button
+                      <button
                         key={slot.slotNumber}
-                        whileHover={!isSlotDisabled ? { scale: 1.02 } : {}}
-                        whileTap={!isSlotDisabled ? { scale: 0.98 } : {}}
                         type="button"
-                        disabled={isSlotDisabled}
                         onClick={() => onSelectTime(slot.fullTimeLabel)}
-                        className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
+                        className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer active:scale-98 ${
                           isSelected
-                            ? 'bg-amber-500 border-amber-400 text-black shadow-lg shadow-amber-500/30 font-black scale-[1.02]'
-                            : isSlotDisabled
-                            ? slot.isBooked
-                              ? 'bg-rose-500/10 border-rose-500/25 text-rose-400/80 cursor-not-allowed'
-                              : 'bg-white/[0.01] border-white/5 text-zinc-600 cursor-not-allowed line-through'
+                            ? 'bg-amber-500 border-amber-400 text-black shadow-lg shadow-amber-500/30 font-black scale-[1.02] ring-2 ring-amber-400'
                             : isDarkMode
                             ? 'glass-pill border-white/10 hover:border-amber-400/60 hover:bg-white/[0.08] text-zinc-200'
                             : 'bg-white border-zinc-200 hover:border-amber-500 text-zinc-800 shadow-2xs'
@@ -383,82 +437,61 @@ export const Step2DateTime: React.FC<Step2DateTimeProps> = ({
 
                           {isSelected ? (
                             <CheckCircle2 className="w-4 h-4 text-black stroke-[3]" />
-                          ) : slot.isBooked ? (
-                            <Ban className="w-3.5 h-3.5 text-rose-400" />
-                          ) : slot.isPast ? (
-                            <Clock className="w-3.5 h-3.5 text-zinc-600" />
                           ) : (
                             <Car className="w-3.5 h-3.5 text-emerald-400" />
                           )}
                         </div>
 
-                        {/* Status Indicator Pill */}
-                        <div className="mt-2 flex items-center justify-between pt-1 border-t border-black/10 dark:border-white/10">
-                          <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                        <div className="mt-1.5 flex items-center justify-between pt-1 border-t border-black/10 dark:border-white/10 text-[10px]">
+                          <span className={`font-bold ${
                             isSelected
                               ? 'text-black'
-                              : slot.isBooked
-                              ? 'text-rose-400'
-                              : slot.isPast
-                              ? 'text-zinc-600'
                               : 'text-emerald-400'
                           }`}>
-                            {isSelected
-                              ? 'Seçildi ✓'
-                              : slot.isBooked
-                              ? 'Dolu'
-                              : slot.isPast
-                              ? 'Geçmiş'
-                              : 'Müsait'}
+                            {isSelected ? 'Seçildi ✓' : 'Müsait'}
                           </span>
-
-                          <span className={`text-[9px] ${
-                            isSelected ? 'text-black/80 font-bold' : 'text-zinc-400'
-                          }`}>
-                            {slot.isBooked ? 'Rezerve' : slot.isAvailable ? 'Boş Yer' : ''}
+                          <span className={isSelected ? 'text-black/80 font-bold text-[9px]' : 'text-zinc-400 text-[9px]'}>
+                            Boş Yer
                           </span>
                         </div>
-                      </motion.button>
+                      </button>
                     );
                   })}
                 </div>
-              </motion.div>
+              </div>
             );
           })}
         </div>
-
-        {totalAvailableSlots === 0 && (
-          <div className="mt-4 p-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-300 flex items-center gap-3 text-xs backdrop-blur-md">
-            <AlertCircle className="w-5 h-5 shrink-0" />
-            <div>
-              Seçilen gün için tüm peronlar doludur veya mesai saati sona ermiştir. Lütfen yukarıdan bir sonraki günü seçiniz.
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Selected Slot Summary Badge */}
+      {/* Selected Slot Summary Card */}
       {selectedTime && (
-        <div className="p-3.5 rounded-2xl border border-amber-500/40 glass-panel-amber flex items-center justify-between text-xs shadow-md">
+        <div className="p-3.5 rounded-2xl border border-amber-500/50 glass-panel-amber flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-md">
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-amber-400" />
-            <span className="text-zinc-300">
-              Seçilen Randevu Zamanı: <strong className="text-amber-400">{selectedTime}</strong>
+            <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="text-zinc-200">
+              Seçilen Randevu: <strong className="text-amber-400">{formatTurkishDate(selectedDate)} · {selectedTime}</strong>
             </span>
           </div>
-          <span className="text-[11px] font-bold text-amber-300">
-            {formatTurkishDate(selectedDate)}
-          </span>
+
+          <button
+            type="button"
+            onClick={onNext}
+            className="w-full sm:w-auto px-4 py-2 rounded-xl glass-button text-black font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/25 active:scale-95 cursor-pointer shrink-0"
+          >
+            <span>Araç & İletişim Bilgilerine Geç</span>
+            <ChevronRight className="w-3.5 h-3.5 stroke-[2.8]" />
+          </button>
         </div>
       )}
 
-      {/* Navigation Buttons (Mobile Optimized) */}
-      <div className="pt-4 flex items-center justify-between border-t border-white/10">
+      {/* Navigation Buttons */}
+      <div className="pt-2 flex items-center justify-between border-t border-white/10">
         <button
           type="button"
           onClick={onBack}
           className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-            isDarkMode ? 'hover:bg-white/10 text-zinc-300 border border-white/10' : 'hover:bg-zinc-100 text-zinc-600'
+            isDarkMode ? 'hover:bg-white/10 text-zinc-300 border border-white/10' : 'hover:bg-zinc-100 text-zinc-600 border border-zinc-200'
           }`}
         >
           <ChevronLeft className="w-4 h-4" />
@@ -469,16 +502,49 @@ export const Step2DateTime: React.FC<Step2DateTimeProps> = ({
           type="button"
           disabled={!selectedDate || !selectedTime}
           onClick={onNext}
-          className={`px-6 py-3 rounded-xl sm:rounded-2xl font-black text-sm flex items-center gap-2 transition-all cursor-pointer ${
+          className={`px-5 py-2.5 rounded-xl font-black text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer ${
             selectedDate && selectedTime
-              ? 'glass-button text-black active:scale-95'
-              : 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-60'
+              ? 'glass-button text-black active:scale-95 shadow-md shadow-amber-500/30 ring-1 ring-amber-400'
+              : 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50'
           }`}
         >
-          <span>Araç & Not Bilgilerine Geç</span>
-          <ChevronRight className="w-4 h-4" />
+          <span>Araç & İletişim Bilgilerine Geç</span>
+          <ChevronRight className="w-4 h-4 stroke-[2.5]" />
         </button>
       </div>
+
+      {/* PORTALED FIXED VIEWPORT BOTTOM BAR */}
+      {typeof document !== 'undefined' && createPortal(
+        <div className={`fixed bottom-0 left-0 right-0 z-40 p-3 sm:p-4 backdrop-blur-2xl border-t shadow-[0_-10px_35px_rgba(0,0,0,0.85)] transition-all ${
+          isDarkMode ? 'bg-zinc-950/95 border-white/15 text-zinc-100' : 'bg-white/95 border-zinc-200 text-zinc-900'
+        }`}>
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex flex-col">
+              <span className="text-[11px] text-zinc-400">
+                Seçilen Tarih: <strong className="text-amber-400">{formatTurkishDate(selectedDate)}</strong>
+              </span>
+              <span className="text-xs font-black truncate">
+                {selectedTime ? selectedTime : 'Lütfen saat ve peron seçiniz'}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              disabled={!selectedDate || !selectedTime}
+              onClick={onNext}
+              className={`px-5 sm:px-7 py-3 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                selectedDate && selectedTime
+                  ? 'glass-button text-black active:scale-95 shadow-lg shadow-amber-500/30 ring-1 ring-amber-400'
+                  : 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50'
+              }`}
+            >
+              <span>İletişim Bilgilerine Geç</span>
+              <ChevronRight className="w-4 h-4 stroke-[2.5]" />
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
     </motion.div>
   );
 };

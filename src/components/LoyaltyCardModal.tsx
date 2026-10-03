@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Award, Gift, Sparkles, Check, X, RotateCcw, ShieldCheck, Ticket } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { X, Gift, Sparkles, Check, ShieldCheck, Car } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { getCustomerStampsMap, getStoredAppointments } from '../utils/storage';
 
 interface LoyaltyModalProps {
   isOpen: boolean;
@@ -10,23 +11,35 @@ interface LoyaltyModalProps {
   isDarkMode: boolean;
 }
 
-const STORAGE_KEY = 'esse_loyalty_stamps';
 const MAX_STAMPS = 5;
 
 export const LoyaltyCardModal: React.FC<LoyaltyModalProps> = ({ isOpen, onClose, isDarkMode }) => {
-  const [stamps, setStamps] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? Math.min(MAX_STAMPS, parseInt(saved, 10) || 0) : 1;
-    } catch {
-      return 1;
-    }
-  });
-
+  const [stamps, setStamps] = useState<number>(1);
+  const [activePlate, setActivePlate] = useState<string>('09 DB 482');
   const [hasCelebrated, setHasCelebrated] = useState<boolean>(false);
 
   useEffect(() => {
-    if (stamps === MAX_STAMPS && !hasCelebrated) {
+    if (isOpen) {
+      const apts = getStoredAppointments();
+      const stampsMap = getCustomerStampsMap();
+      if (apts.length > 0 && apts[0].customer?.plateNumber) {
+        const plate = apts[0].customer.plateNumber.toUpperCase().trim();
+        setActivePlate(plate);
+        setStamps(stampsMap[plate] !== undefined ? stampsMap[plate] : 1);
+      } else {
+        const firstEntry = Object.entries(stampsMap)[0];
+        if (firstEntry) {
+          setActivePlate(firstEntry[0]);
+          setStamps(firstEntry[1]);
+        } else {
+          setStamps(1);
+        }
+      }
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (stamps >= MAX_STAMPS && !hasCelebrated) {
       confetti({
         particleCount: 150,
         spread: 80,
@@ -36,23 +49,6 @@ export const LoyaltyCardModal: React.FC<LoyaltyModalProps> = ({ isOpen, onClose,
       setHasCelebrated(true);
     }
   }, [stamps, hasCelebrated]);
-
-  const handleAddStamp = () => {
-    setStamps((prev) => {
-      const next = prev < MAX_STAMPS ? prev + 1 : 1;
-      localStorage.setItem(STORAGE_KEY, next.toString());
-      if (next === MAX_STAMPS) {
-        setHasCelebrated(false);
-      }
-      return next;
-    });
-  };
-
-  const handleReset = () => {
-    localStorage.setItem(STORAGE_KEY, '0');
-    setStamps(0);
-    setHasCelebrated(false);
-  };
 
   if (!isOpen) return null;
 
@@ -94,7 +90,7 @@ export const LoyaltyCardModal: React.FC<LoyaltyModalProps> = ({ isOpen, onClose,
           </p>
         </div>
 
-        {/* Physical-Style VIP Gold Card Simulation */}
+        {/* Physical-Style VIP Gold Card */}
         <div className="p-6 rounded-3xl bg-gradient-to-br from-zinc-900 via-zinc-950 to-black border border-amber-500/40 shadow-2xl relative overflow-hidden text-zinc-100">
           <div className="absolute top-0 right-0 w-44 h-44 bg-amber-500/10 blur-3xl pointer-events-none" />
 
@@ -109,8 +105,15 @@ export const LoyaltyCardModal: React.FC<LoyaltyModalProps> = ({ isOpen, onClose,
                 <div className="text-[10px] text-zinc-400">Aydın Efeler Çevre Bulvarı</div>
               </div>
             </div>
-            <div className="text-[11px] font-mono text-amber-400/80 font-bold">
-              {stamps}/{MAX_STAMPS} DAMGA
+
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded-lg bg-zinc-800 border border-white/15 font-mono font-black text-amber-400 text-xs flex items-center gap-1">
+                <Car className="w-3 h-3" />
+                {activePlate}
+              </span>
+              <div className="text-[11px] font-mono text-amber-400/80 font-bold">
+                {stamps}/{MAX_STAMPS} DAMGA
+              </div>
             </div>
           </div>
 
@@ -138,15 +141,21 @@ export const LoyaltyCardModal: React.FC<LoyaltyModalProps> = ({ isOpen, onClose,
                       className="flex flex-col items-center"
                     >
                       <Check className="w-5 h-5 stroke-[3]" />
-                      <span className="text-[9px] font-black uppercase mt-0.5">ESSE</span>
+                      <span className="text-[8px] font-black uppercase tracking-tighter mt-0.5">
+                        ESSE
+                      </span>
                     </motion.div>
                   ) : isGift ? (
                     <div className="flex flex-col items-center">
-                      <Gift className="w-5 h-5 animate-pulse text-amber-400" />
-                      <span className="text-[8px] font-bold text-amber-400/90 mt-0.5">HEDİYE</span>
+                      <Gift className="w-5 h-5 text-amber-400 animate-pulse" />
+                      <span className="text-[8px] font-bold uppercase tracking-tighter text-amber-400 mt-0.5">
+                        HEDİYE
+                      </span>
                     </div>
                   ) : (
-                    <span className="text-xs font-mono font-bold">{index}</span>
+                    <span className="font-mono text-xs font-bold text-zinc-600">
+                      {index}
+                    </span>
                   )}
                 </div>
               );
@@ -166,31 +175,16 @@ export const LoyaltyCardModal: React.FC<LoyaltyModalProps> = ({ isOpen, onClose,
           </div>
         </div>
 
-        {/* Action Controls */}
-        <div className="mt-6 flex flex-col sm:flex-row items-center gap-3">
-          <button
-            type="button"
-            onClick={handleAddStamp}
-            className="w-full sm:flex-1 py-3.5 px-4 rounded-2xl font-black text-xs sm:text-sm text-black glass-button flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer shadow-lg shadow-amber-500/25"
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>{stamps >= MAX_STAMPS ? 'Yeni Karta Başla' : 'Damga Ekle (+1)'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleReset}
-            className="w-full sm:w-auto px-4 py-3.5 rounded-2xl text-xs font-bold border border-white/10 hover:bg-white/5 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-            title="Kartı Sıfırla"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Sıfırla</span>
-          </button>
+        {/* SECURITY NOTE: Müşteri kendisi damga ekleyemez! Yalnızca işletme yetkilisi ekler */}
+        <div className="mt-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-center space-y-1">
+          <div className="flex items-center justify-center gap-1.5 text-xs font-black text-amber-400">
+            <ShieldCheck className="w-4 h-4 stroke-[2.5]" />
+            <span>Yalnızca İstasyon Yetkilisi Tarafından İşlenir</span>
+          </div>
+          <p className="text-[11px] text-zinc-400 leading-relaxed">
+            Damgalarınız, Esse Oto Yıkama istasyonumuzda tamamlanan her yıkama işlemi sonrasında yetkili personel tarafından sisteme kaydedilir ve kartınıza otomatik yansır.
+          </p>
         </div>
-
-        <p className="text-[10px] text-zinc-500 text-center mt-3">
-          Damgalarınız tarayıcınızın yerel hafızasında saklanır; internet bağlantısı gerektirmez.
-        </p>
       </motion.div>
     </div>,
     document.body

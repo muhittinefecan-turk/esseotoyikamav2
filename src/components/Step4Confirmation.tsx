@@ -1,13 +1,9 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  MessageSquare, 
   Calendar as CalendarIcon, 
   Download, 
-  Printer, 
-  Copy, 
   Check, 
-  ChevronLeft, 
   Clock, 
   MapPin, 
   User, 
@@ -15,25 +11,18 @@ import {
   Sparkles,
   ExternalLink,
   Car,
-  FileText,
-  BadgeAlert,
   XCircle,
   RotateCcw,
-  Smartphone,
-  Image as ImageIcon
+  CheckCircle2,
+  AlertTriangle,
+  MessageCircle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { AppointmentData, BusinessConfig } from '../types';
-import { usePWAInstall } from '../context/PWAInstallContext';
 import { formatDuration, formatTurkishDate } from '../utils/formatters';
 import { downloadAppointmentTicketImage } from '../utils/ticketCanvas';
-import { 
-  buildWhatsAppMessage, 
-  getWhatsAppUrl, 
-  getCancellationWhatsAppUrl, 
-  buildCancellationWhatsAppMessage 
-} from '../utils/whatsapp';
 import { downloadIcsFile, getGoogleCalendarUrl } from '../utils/calendar';
+import { cancelAppointment } from '../utils/storage';
 
 interface Step4ConfirmationProps {
   appointment: AppointmentData;
@@ -48,86 +37,85 @@ interface Step4ConfirmationProps {
 export const Step4Confirmation: React.FC<Step4ConfirmationProps> = ({
   appointment,
   business,
-  onBack,
   onReset,
-  onAppointmentSent,
   onCancelAppointment,
   isDarkMode,
 }) => {
-  const [copiedMain, setCopiedMain] = useState(false);
-  const [sentToWp, setSentToWp] = useState(appointment.status === 'sent_via_whatsapp');
-  const [showCancelModal, setShowCancelModal] = useState(false);
-  const { isInstalled, installApp } = usePWAInstall();
+  const [downloadingTicket, setDownloadingTicket] = useState(false);
+  const [showCancelPrompt, setShowCancelPrompt] = useState(false);
+  const [isCancelled, setIsCancelled] = useState(false);
 
-  const handleInstallClick = async () => {
-    await installApp();
-  };
+  // Trigger celebration confetti on mount
+  React.useEffect(() => {
+    try {
+      confetti({
+        particleCount: 80,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ['#F59E0B', '#10B981', '#3B82F6', '#FFFFFF'],
+      });
+    } catch {
+      // Ignored
+    }
+  }, []);
 
-  const wpMainMessage = buildWhatsAppMessage(appointment, business);
-  const wpMainUrl = getWhatsAppUrl(appointment, business);
-  const wpCancelUrl = getCancellationWhatsAppUrl(appointment, business);
-  const wpCancelMessage = buildCancellationWhatsAppMessage(appointment, business);
   const googleCalUrl = getGoogleCalendarUrl(appointment, business);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(wpMainMessage);
-    setCopiedMain(true);
-    setTimeout(() => setCopiedMain(false), 2500);
+  const handleDownloadTicket = async () => {
+    try {
+      setDownloadingTicket(true);
+      await downloadAppointmentTicketImage(appointment, business);
+    } finally {
+      setDownloadingTicket(false);
+    }
   };
 
-  const handleWhatsAppSend = () => {
-    confetti({
-      particleCount: 120,
-      spread: 70,
-      origin: { y: 0.6 },
-      colors: ['#F59E0B', '#10B981', '#3B82F6', '#FFFFFF'],
-    });
-
-    setSentToWp(true);
-    onAppointmentSent();
-    window.open(wpMainUrl, '_blank', 'noopener,noreferrer');
-  };
-
-  const handleConfirmCancel = () => {
-    window.open(wpCancelUrl, '_blank', 'noopener,noreferrer');
+  const handleDirectCancel = () => {
+    cancelAppointment(appointment.id, 'customer', 'Müşteri onay ekranından doğrudan iptal etti');
+    setIsCancelled(true);
+    setShowCancelPrompt(false);
     onCancelAppointment(appointment);
-    setShowCancelModal(false);
   };
 
   return (
     <motion.div 
       initial={{ opacity: 0, scale: 0.96, y: 20 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: 'easeOut' }}
-      className="space-y-6 sm:space-y-8 pb-20"
+      transition={{ duration: 0.45, ease: 'easeOut' }}
+      className="space-y-6 sm:space-y-8 pb-20 max-w-2xl mx-auto"
     >
       {/* Top Banner */}
-      <div className="text-center max-w-xl mx-auto space-y-2">
+      <div className="text-center space-y-2">
         <motion.div 
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1, duration: 0.4 }}
-          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold glass-pill text-amber-400 border border-amber-500/30 backdrop-blur-xl"
+          className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-black glass-pill text-emerald-400 border border-emerald-500/30 backdrop-blur-xl"
         >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Randevu Detayları ve WhatsApp İletimi</span>
+          <CheckCircle2 className="w-4 h-4" />
+          <span>Randevunuz Doğrudan Sisteme İletildi</span>
         </motion.div>
+        
         <h2 className="text-2xl sm:text-3xl font-black tracking-tight">
-          Randevu Detaylarınız Hazır
+          {isCancelled ? 'Randevu İptal Edildi' : 'Randevunuz Başarıyla Oluşturuldu!'}
         </h2>
-        <p className="text-xs sm:text-sm text-zinc-400">
-          Yeşil WhatsApp butonuyla randevunuzu işletmeye hemen gönderin.
+        <p className="text-xs sm:text-sm text-zinc-400 max-w-md mx-auto">
+          {isCancelled 
+            ? 'Randevunuz iptal edildi ve peron sistemde tekrar müsait duruma getirildi.' 
+            : 'Randevunuz doğrudan istasyon panelimize düştü. WhatsApp veya başka bir işlem yapmanıza gerek yoktur.'}
         </p>
       </div>
 
       {/* Main Glassmorphic Ticket Card */}
-      <div className={`relative max-w-2xl mx-auto rounded-3xl border overflow-hidden glass-panel transition-all shadow-[0_25px_60px_rgba(0,0,0,0.65)] ${
-        isDarkMode ? 'border-white/15' : 'bg-white border-zinc-200'
+      <div className={`relative rounded-3xl border overflow-hidden glass-panel transition-all shadow-[0_25px_60px_rgba(0,0,0,0.65)] ${
+        isDarkMode ? 'border-white/15 bg-zinc-950/80 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900'
       }`}>
-        {/* Header */}
-        <div className="bg-gradient-to-r from-amber-600 via-amber-500 to-amber-600 p-4 sm:p-5 text-black flex items-center justify-between">
+        {/* Ticket Header */}
+        <div className={`p-4 sm:p-5 text-black flex items-center justify-between ${
+          isCancelled ? 'bg-gradient-to-r from-rose-600 to-rose-500 text-white' : 'bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500'
+        }`}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-black text-amber-500 font-black flex items-center justify-center text-lg shadow-md border border-amber-400/30">
+            <div className="w-10 h-10 rounded-2xl bg-black text-amber-400 font-black flex items-center justify-center text-lg shadow-md border border-amber-400/30">
               ES
             </div>
             <div>
@@ -135,396 +123,216 @@ export const Step4Confirmation: React.FC<Step4ConfirmationProps> = ({
                 {business.name}
               </div>
               <div className="text-[11px] font-bold text-black/80 mt-1">
-                Online Randevu Bildirimi
+                {isCancelled ? 'İptal Edilen Randevu' : 'Elektronik Giriş Bileti'}
               </div>
             </div>
           </div>
 
           <div className="text-right">
-            <span className="text-[10px] uppercase font-black tracking-wider text-black/75 block">
-              Randevu Kodu
-            </span>
-            <span className="font-mono-plate font-black text-base">
+            <span className="font-mono-plate font-black text-sm px-2.5 py-1 rounded-lg bg-black text-amber-400 shadow-sm">
               #{appointment.id}
             </span>
           </div>
         </div>
 
-        {/* Card Body */}
-        <div className="p-4 sm:p-7 space-y-5">
-          {/* Vehicle and Plate Bar */}
-          <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 backdrop-blur-md ${
-            isDarkMode ? 'bg-white/[0.03] border-white/10' : 'bg-zinc-50 border-zinc-200'
+        {/* Status Callout */}
+        <div className="px-5 pt-4">
+          <div className={`p-3 rounded-2xl border text-xs font-bold flex items-center justify-between ${
+            isCancelled 
+              ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+              : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
           }`}>
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/25">
-                <Car className="w-6 h-6" />
-              </div>
-              <div>
-                <div className="text-[11px] text-zinc-400 font-semibold">Kayıtlı Araç</div>
-                <div className="text-base font-extrabold text-zinc-100">
-                  {appointment.customer.carModel || 'Belirtilmedi'}
-                </div>
-                <div className="text-xs text-zinc-400">
-                  Segment: {appointment.vehicleType === 'sedan' ? 'Binek' : appointment.vehicleType === 'suv' ? 'SUV / Crossover' : 'Ticari'}
-                </div>
-              </div>
+            <span className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${isCancelled ? 'bg-rose-500' : 'bg-emerald-500 animate-pulse'}`} />
+              {isCancelled ? 'İptal Edildi' : 'Doğrudan İstasyon Sistemine Kaydedildi'}
+            </span>
+            <span className="text-[11px] opacity-80">
+              {isCancelled ? 'İşlem Kapandı' : 'Sıraya Alındı'}
+            </span>
+          </div>
+        </div>
+
+        {/* Ticket Body */}
+        <div className="p-5 sm:p-6 space-y-4">
+          {/* Key Details Grid */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-3 rounded-2xl border border-white/10 bg-white/[0.02]">
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1 mb-1">
+                <CalendarIcon className="w-3.5 h-3.5 text-amber-500" />
+                Randevu Tarihi
+              </span>
+              <span className="text-xs sm:text-sm font-black text-zinc-100">
+                {formatTurkishDate(appointment.date)}
+              </span>
             </div>
 
-            {/* Turkish Plate Badge */}
-            <div className="flex items-center rounded-xl overflow-hidden border border-zinc-600 bg-white text-black shadow-md">
-              <div className="bg-[#003399] text-white px-2.5 py-1.5 flex flex-col items-center justify-center font-bold text-[10px]">
-                <span>🇹🇷</span>
-                <span className="text-[10px] font-black">TR</span>
-              </div>
-              <div className="px-3.5 py-1 font-mono-plate font-black text-base tracking-widest text-zinc-950">
+            <div className="p-3 rounded-2xl border border-white/10 bg-white/[0.02]">
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1 mb-1">
+                <Clock className="w-3.5 h-3.5 text-amber-500" />
+                Saat & Peron
+              </span>
+              <span className="text-xs sm:text-sm font-black text-amber-400">
+                {appointment.time}
+              </span>
+            </div>
+
+            <div className="p-3 rounded-2xl border border-white/10 bg-white/[0.02]">
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1 mb-1">
+                <Car className="w-3.5 h-3.5 text-amber-500" />
+                Araç & Plaka
+              </span>
+              <span className="text-xs sm:text-sm font-black text-zinc-100 block truncate">
+                {appointment.customer.carModel || 'Belirtilmedi'}
+              </span>
+              <span className="inline-block mt-1 font-mono font-black text-[11px] bg-white text-black px-1.5 py-0.2 rounded border border-zinc-300">
                 {appointment.customer.plateNumber}
-              </div>
+              </span>
+            </div>
+
+            <div className="p-3 rounded-2xl border border-white/10 bg-white/[0.02]">
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1 mb-1">
+                <User className="w-3.5 h-3.5 text-amber-500" />
+                Müşteri
+              </span>
+              <span className="text-xs sm:text-sm font-black text-zinc-100 block truncate">
+                {appointment.customer.fullName}
+              </span>
+              <span className="text-[11px] text-zinc-400 flex items-center gap-1 mt-0.5">
+                <Phone className="w-3 h-3" />
+                {appointment.customer.phone}
+              </span>
             </div>
           </div>
 
-          {/* Date & Time Highlights */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className={`p-3.5 rounded-2xl border flex items-center gap-3 backdrop-blur-md ${
-              isDarkMode ? 'bg-white/[0.03] border-white/10' : 'bg-zinc-50 border-zinc-200'
-            }`}>
-              <CalendarIcon className="w-5 h-5 text-amber-500 shrink-0" />
-              <div>
-                <div className="text-[11px] text-zinc-400 font-medium">Randevu Tarihi</div>
-                <div className="text-sm font-bold">
-                  {formatTurkishDate(appointment.date)}
-                </div>
-              </div>
+          {/* Services list */}
+          <div className="p-3.5 rounded-2xl border border-white/10 bg-white/[0.02] space-y-1.5">
+            <div className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+              Seçilen Hizmetler:
             </div>
-
-            <div className={`p-3.5 rounded-2xl border flex items-center gap-3 backdrop-blur-md ${
-              isDarkMode ? 'bg-white/[0.03] border-white/10' : 'bg-zinc-50 border-zinc-200'
-            }`}>
-              <Clock className="w-5 h-5 text-amber-500 shrink-0" />
-              <div>
-                <div className="text-[11px] text-zinc-400 font-medium">Randevu Saati & Peron</div>
-                <div className="text-sm font-bold text-amber-400">
-                  {appointment.time}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Selected Services List */}
-          <div>
-            <div className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
-              Seçilen Hizmetler ({appointment.selectedServices.length})
-            </div>
-            <div className={`divide-y rounded-2xl border overflow-hidden backdrop-blur-md ${
-              isDarkMode ? 'divide-white/10 border-white/10 bg-white/[0.02]' : 'divide-zinc-200 border-zinc-200 bg-zinc-50'
-            }`}>
-              {appointment.selectedServices.map((service) => (
-                <div key={service.id} className="p-3.5 flex items-center justify-between text-xs sm:text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                    <span className="font-bold">{service.name}</span>
-                  </div>
-                  <span className="text-zinc-400 text-xs font-semibold">
-                    ~{formatDuration(service.durationMinutes)}
-                  </span>
+            <div className="space-y-1">
+              {appointment.selectedServices.map((s) => (
+                <div key={s.id} className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-200 font-semibold">• {s.name}</span>
+                  <span className="text-zinc-400 text-[11px]">~{formatDuration(s.durationMinutes)}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Special Requests & Notes */}
-          <div className={`p-4 rounded-2xl border space-y-1.5 backdrop-blur-md ${
-            appointment.customer.notes?.trim()
-              ? 'glass-panel-amber border-amber-500/30 text-zinc-100'
-              : 'bg-white/[0.02] border-white/10 text-zinc-400'
-          }`}>
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-400">
-              <FileText className="w-4 h-4" />
-              <span>Müşteri Notu ve Özel Detailing İstekleri:</span>
-            </div>
-            <p className="text-xs sm:text-sm leading-relaxed whitespace-pre-wrap pt-0.5 font-medium">
-              {appointment.customer.notes?.trim()
-                ? appointment.customer.notes.trim()
-                : 'Özel bir not belirtilmedi.'}
-            </p>
-          </div>
-
-          {/* Customer & Location Details */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs pt-1">
-            <div className="space-y-1">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-                Müşteri İletişim
-              </div>
-              <div className="flex items-center gap-2 font-semibold">
-                <User className="w-3.5 h-3.5 text-zinc-400" />
-                <span>{appointment.customer.fullName}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Phone className="w-3.5 h-3.5 text-zinc-400" />
-                <span>{appointment.customer.phone}</span>
+          {/* Address note */}
+          <div className="p-3 rounded-xl border border-amber-500/20 bg-amber-500/5 text-xs text-amber-300/90 flex items-start gap-2">
+            <MapPin className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-black text-zinc-200">{business.address}</div>
+              <div className="text-[11px] text-zinc-400 mt-0.5">
+                Lütfen randevu saatinizden 5-10 dakika önce peron girişinde hazır bulununuz.
               </div>
             </div>
-
-            <div className="space-y-1">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-                İşletme Adresi
-              </div>
-              <div className="flex items-start gap-2">
-                <MapPin className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
-                <span className="leading-snug">
-                  {business.address}, {business.district} / {business.city}
-                </span>
-              </div>
-              <div className="text-zinc-400">
-                Tel: {business.phone}
-              </div>
-            </div>
-          </div>
-
-          {/* Pricing Status Card */}
-          <div className={`p-4 rounded-2xl border flex items-center justify-between backdrop-blur-md ${
-            isDarkMode ? 'bg-amber-500/10 border-amber-500/25' : 'bg-amber-50 border-amber-200'
-          }`}>
-            <div className="flex items-center gap-2.5">
-              <BadgeAlert className="w-5 h-5 text-amber-400" />
-              <div>
-                <span className="text-xs font-bold text-amber-400 block">Fiyat Durumu</span>
-                <span className="text-[11px] text-zinc-300">Araç başında, boyut ve kir durumuna göre belirlenir</span>
-              </div>
-            </div>
-            <span className="text-xs font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-amber-500 text-black">
-              Yerinde Fiyat
-            </span>
           </div>
         </div>
-      </div>
 
-      {/* Primary CTA: WhatsApp Send Button */}
-      <div className="max-w-2xl mx-auto space-y-3">
-        <button
-          type="button"
-          onClick={handleWhatsAppSend}
-          className="w-full py-4 px-6 rounded-2xl font-black text-base sm:text-lg flex items-center justify-center gap-3 bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-600/30 transition-all transform active:scale-95 cursor-pointer"
-        >
-          <MessageSquare className="w-6 h-6" />
-          <span>Randevuyu WhatsApp'tan İşletmeye Gönder</span>
-        </button>
-
-        {sentToWp && (
-          <div className="p-3.5 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs flex items-center justify-center gap-2 backdrop-blur-md">
-            <Check className="w-4 h-4 stroke-[3]" />
-            <span>Randevu talebiniz hazırlandı! WhatsApp üzerinden 'Gönder'e basmayı unutmayınız.</span>
-          </div>
-        )}
-
-        {/* WhatsApp Message Preview & Copy */}
-        <div className={`p-4 rounded-2xl border text-xs space-y-2 glass-panel ${
-          isDarkMode ? 'border-white/10' : 'bg-zinc-50 border-zinc-200'
-        }`}>
-          <div className="flex items-center justify-between">
-            <span className="font-semibold text-zinc-400">
-              WhatsApp Randevu İleti Metni (UTF-8 Güvenli):
-            </span>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
-                copiedMain
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  : 'bg-white/10 hover:bg-white/20 text-zinc-200 border border-white/10'
-              }`}
+        {/* Cancellation confirmation modal */}
+        <AnimatePresence>
+          {showCancelPrompt && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="p-5 border-t border-rose-500/30 bg-rose-500/10 space-y-3"
             >
-              {copiedMain ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedMain ? 'Kopyalandı' : 'Metni Kopyala'}</span>
-            </button>
-          </div>
-
-          <pre className={`p-3 rounded-xl overflow-x-auto text-[11px] font-mono whitespace-pre-wrap leading-relaxed max-h-36 ${
-            isDarkMode ? 'bg-black/50 text-zinc-300 border border-white/10' : 'bg-white text-zinc-700 border border-zinc-200'
-          }`}>
-            {wpMainMessage}
-          </pre>
-        </div>
-
-        {/* PWA Install App in Step 4 */}
-        <div>
-          {isInstalled ? (
-            <div className="p-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs font-bold flex items-center justify-between gap-3 backdrop-blur-md">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
-                  <Check className="w-5 h-5 stroke-[2.5]" />
-                </div>
-                <div>
-                  <div className="text-xs font-black">Esse Oto Uygulaması Cihazınızda Kurulu</div>
-                  <div className="text-[11px] text-zinc-400 font-normal">
-                    Randevu fişinize ana ekranınızdaki uygulama üzerinden her an erişebilirsiniz.
-                  </div>
-                </div>
+              <div className="flex items-center gap-2 text-rose-400 font-black text-sm">
+                <AlertTriangle className="w-4 h-4" />
+                <span>Bu randevuyu iptal etmek istediğinize emin misiniz?</span>
               </div>
-              <span className="text-[10px] px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-500/30 shrink-0 uppercase">
-                Yüklü
-              </span>
-            </div>
-          ) : (
-            <div className={`p-4 rounded-3xl border transition-all glass-panel flex flex-col sm:flex-row items-center justify-between gap-3.5 ${
-              isDarkMode ? 'border-amber-500/35 bg-amber-500/[0.04]' : 'border-amber-500/30 bg-amber-50/60'
-            }`}>
-              <div className="flex items-center gap-3 text-center sm:text-left">
-                <div className="w-12 h-12 rounded-2xl bg-amber-500 text-black flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/25">
-                  <Smartphone className="w-6 h-6 stroke-[2.2]" />
-                </div>
-                <div>
-                  <div className="text-sm font-black text-zinc-100 flex items-center justify-center sm:justify-start gap-1.5">
-                    <span>Uygulamayı Ana Ekrana Ekleyin</span>
-                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500 text-black font-extrabold uppercase">
-                      Hızlı Erişim
-                    </span>
-                  </div>
-                  <div className="text-xs text-zinc-400 mt-0.5 max-w-sm">
-                    Randevularınızı takip edin, tarayıcı çubuğu olmadan tam ekran mobil deneyimi yaşayın.
-                  </div>
-                </div>
+              <p className="text-xs text-zinc-300">
+                Randevunuz doğrudan istasyon sisteminden kaldırılacak ve peron saati tekrar diğer müşteriler için açılacaktır.
+              </p>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleDirectCancel}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs cursor-pointer shadow-md transition-all active:scale-95"
+                >
+                  Evet, Randevumu İptal Et
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCancelPrompt(false)}
+                  className="px-3 py-2 rounded-xl border border-white/10 hover:bg-white/10 text-zinc-400 font-bold text-xs cursor-pointer"
+                >
+                  Vazgeç
+                </button>
               </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Actions Bar */}
+        {!isCancelled && !showCancelPrompt && (
+          <div className="p-4 sm:p-5 border-t border-white/10 bg-white/[0.02] flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={handleDownloadTicket}
+                disabled={downloadingTicket}
+                className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>{downloadingTicket ? 'İndiriliyor...' : 'Giriş Kartını İndir'}</span>
+              </button>
+
+              <a
+                href={googleCalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-2 rounded-xl border border-white/15 hover:bg-white/10 text-xs font-bold text-zinc-200 flex items-center gap-1.5 transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+                <span>Google Takvim</span>
+              </a>
 
               <button
                 type="button"
-                onClick={handleInstallClick}
-                className="w-full sm:w-auto px-5 py-3 rounded-2xl font-black text-xs sm:text-sm text-black glass-button flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer shadow-md shadow-amber-500/25 shrink-0"
+                onClick={() => downloadIcsFile(appointment, business)}
+                className="px-2.5 py-2 rounded-xl border border-white/15 hover:bg-white/10 text-xs font-semibold text-zinc-300"
               >
-                <Download className="w-4 h-4 stroke-[2.5]" />
-                <span>Uygulamayı Yükle</span>
+                .ics
               </button>
             </div>
-          )}
-        </div>
+
+            <button
+              type="button"
+              onClick={() => setShowCancelPrompt(true)}
+              className="px-3 py-2 rounded-xl border border-rose-500/30 text-rose-400 hover:bg-rose-500/20 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+            >
+              <XCircle className="w-3.5 h-3.5" />
+              <span>Randevuyu İptal Et</span>
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Calendar & Export Options */}
-      <div className="max-w-2xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+      {/* Bottom Navigation */}
+      <div className="flex items-center justify-between pt-2">
         <button
           type="button"
-          onClick={() => downloadAppointmentTicketImage(appointment, business)}
-          className={`p-3 rounded-2xl border text-xs font-bold flex items-center justify-center gap-2 glass-pill transition-all cursor-pointer ${
-            isDarkMode ? 'text-amber-400 hover:bg-white/10 border-amber-500/30' : 'bg-white hover:bg-zinc-100 border-amber-500/40 text-amber-700'
-          }`}
+          onClick={onReset}
+          className="px-5 py-3 rounded-2xl glass-button text-xs font-black text-black inline-flex items-center gap-2 shadow-lg shadow-amber-500/20 cursor-pointer active:scale-95"
         >
-          <ImageIcon className="w-4 h-4 text-amber-400" />
-          <span>Bileti İndir (PNG)</span>
+          <RotateCcw className="w-4 h-4 stroke-[2.5]" />
+          <span>Yeni Bir Randevu Oluştur</span>
         </button>
 
         <a
-          href={googleCalUrl}
+          href={`https://wa.me/${business.whatsappNumber}?text=${encodeURIComponent(`Merhaba, ${appointment.id} nolu randevum hakkında bilgi almak istiyorum.`)}`}
           target="_blank"
           rel="noopener noreferrer"
-          className={`p-3 rounded-2xl border text-xs font-bold flex items-center justify-center gap-2 glass-pill transition-all cursor-pointer ${
-            isDarkMode ? 'text-zinc-200 hover:bg-white/10' : 'bg-white hover:bg-zinc-100 border-zinc-200 text-zinc-800'
-          }`}
+          className="text-xs text-zinc-400 hover:text-emerald-400 flex items-center gap-1.5 transition-colors"
         >
-          <CalendarIcon className="w-4 h-4 text-amber-500" />
-          <span>Google Takvim</span>
-          <ExternalLink className="w-3 h-3 opacity-60" />
+          <MessageCircle className="w-4 h-4 text-emerald-500" />
+          <span>İşletmeyle WhatsApp'tan İletişime Geç</span>
         </a>
-
-        <button
-          type="button"
-          onClick={() => downloadIcsFile(appointment, business)}
-          className={`p-3 rounded-2xl border text-xs font-bold flex items-center justify-center gap-2 glass-pill transition-all cursor-pointer ${
-            isDarkMode ? 'text-zinc-200 hover:bg-white/10' : 'bg-white hover:bg-zinc-100 border-zinc-200 text-zinc-800'
-          }`}
-        >
-          <Download className="w-4 h-4 text-emerald-400" />
-          <span>Takvim (.ics)</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className={`p-3 rounded-2xl border text-xs font-bold flex items-center justify-center gap-2 glass-pill transition-all cursor-pointer ${
-            isDarkMode ? 'text-zinc-200 hover:bg-white/10' : 'bg-white hover:bg-zinc-100 border-zinc-200 text-zinc-800'
-          }`}
-        >
-          <Printer className="w-4 h-4 text-sky-400" />
-          <span>Fişi Yazdır</span>
-        </button>
       </div>
-
-      {/* Cancellation and Re-booking Section */}
-      <div className="max-w-2xl mx-auto pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => setShowCancelModal(true)}
-          className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
-        >
-          <XCircle className="w-4 h-4" />
-          <span>Randevuyu İptal Et & İşletmeye Bildir</span>
-        </button>
-
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={onBack}
-            className="px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer hover:bg-white/10 text-zinc-300 border border-white/10"
-          >
-            <ChevronLeft className="w-4 h-4" />
-            <span>Bilgileri Düzenle</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={onReset}
-            className="px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer hover:bg-white/10 text-amber-400 flex items-center gap-1.5"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>+ Yeni Randevu Aç</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Cancellation Modal Dialog */}
-      {showCancelModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="w-full max-w-md rounded-3xl border border-white/15 bg-zinc-900/95 p-6 space-y-4 text-zinc-100 shadow-2xl glass-panel">
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                <XCircle className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="font-black text-lg">Randevu İptali</h3>
-                <p className="text-xs text-zinc-400">
-                  #{appointment.id} nolu randevunuzu iptal ediyorsunuz.
-                </p>
-              </div>
-            </div>
-
-            <p className="text-xs text-zinc-300 leading-relaxed">
-              İptal talebinizi onayladığınızda işletmeye otomatik olarak WhatsApp üzerinden iptal bildirimi gönderilir ve ilgili randevu saati istasyonda tekrar müsait duruma getirilir.
-            </p>
-
-            <div className="p-3 rounded-xl border border-white/10 bg-black/50 text-[11px] font-mono text-zinc-300 whitespace-pre-wrap max-h-28 overflow-y-auto">
-              {wpCancelMessage}
-            </div>
-
-            <div className="pt-2 flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={handleConfirmCancel}
-                className="w-full py-3 rounded-xl font-black text-xs bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-rose-600/30"
-              >
-                <MessageSquare className="w-4 h-4" />
-                <span>WhatsApp ile İptal Et ve İşletmeye Gönder</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowCancelModal(false)}
-                className="w-full py-2.5 rounded-xl font-bold text-xs border border-white/10 hover:bg-white/10 text-zinc-300 transition-colors"
-              >
-                Vazgeç, Randevumu Koru
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </motion.div>
   );
 };

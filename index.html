@@ -10,8 +10,18 @@
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
-
       gtag('config', 'G-HDDP232QLM');
+
+      // Purge old PWA cache if present
+      if ('caches' in window) {
+        caches.keys().then(function(keys) {
+          keys.forEach(function(k) {
+            if (k.indexOf('esse-otoyikama-v1') !== -1 || k.indexOf('esse-otoyikama-v2') !== -1) {
+              caches.delete(k);
+            }
+          });
+        });
+      }
     </script>
 
     <!-- Google #1 SEO Meta Tags (Targeting "Aydın Oto Yıkama", "Efeler Oto Yıkama", "Pasta Cila Aydın") -->

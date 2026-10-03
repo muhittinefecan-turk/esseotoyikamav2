@@ -36,10 +36,44 @@ export interface AppointmentData {
   vehicleType: VehicleCategory;
   selectedServices: ServiceItem[];
   date: string; // YYYY-MM-DD
-  time: string; // HH:mm
+  time: string; // HH:mm or "HH:mm - HH:mm (X. Peron)"
   totalDurationMinutes: number;
   customer: CustomerFormData;
-  status: 'pending' | 'sent_via_whatsapp';
+  status: 'pending' | 'sent_via_whatsapp' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
+  adminNotes?: string;
+  cancelledBy?: 'customer' | 'admin';
+  cancelledAt?: string;
+  cancellationReason?: string;
+  stampedAt?: string;
+}
+
+export interface LoyaltyCustomerProfile {
+  plate: string;
+  fullName: string;
+  phone: string;
+  stamps: number; // 0 to 5
+  history: StampHistoryItem[];
+  lastUpdated: string;
+}
+
+export interface StampHistoryItem {
+  id: string;
+  appointmentId: string;
+  date: string;
+  awardedAt: string;
+  serviceNames: string[];
+  note?: string;
+}
+
+export interface SystemNotificationEvent {
+  id: string;
+  timestamp: string;
+  type: 'created' | 'approved' | 'in_progress' | 'completed' | 'cancelled_by_admin' | 'cancelled_by_customer' | 'stamp_awarded';
+  title: string;
+  message: string;
+  appointmentId?: string;
+  plate?: string;
+  customerName?: string;
 }
 
 export interface BusinessConfig {

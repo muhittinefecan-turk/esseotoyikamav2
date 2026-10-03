@@ -41,12 +41,22 @@ export const CountdownWidget: React.FC<CountdownProps> = ({
     const calculate = () => {
       try {
         const [year, month, day] = appointment.date.split('-').map(Number);
-        const [hour, minute] = appointment.time.split(':').map(Number);
-        const target = new Date(year, month - 1, day, hour, minute);
+        // Cleanly extract start hour and minute from "14:30 - 15:30 (1. Peron)" or "14:30"
+        const timePart = appointment.time.split(' - ')[0].trim().split(' ')[0];
+        const [hourStr, minuteStr] = timePart.split(':');
+        const hour = parseInt(hourStr, 10);
+        const minute = parseInt(minuteStr, 10);
+
+        if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hour) || isNaN(minute)) {
+          setTimeLeft(null);
+          return;
+        }
+
+        const target = new Date(year, month - 1, day, hour, minute, 0);
         const now = new Date();
         const diff = target.getTime() - now.getTime();
 
-        if (diff <= 0) {
+        if (isNaN(diff) || diff <= 0) {
           setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0, isPast: true });
           return;
         }
@@ -55,6 +65,11 @@ export const CountdownWidget: React.FC<CountdownProps> = ({
         const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
         const minutes = Math.floor((diff / 1000 / 60) % 60);
         const seconds = Math.floor((diff / 1000) % 60);
+
+        if (isNaN(days) || isNaN(hours) || isNaN(minutes) || isNaN(seconds)) {
+          setTimeLeft(null);
+          return;
+        }
 
         setTimeLeft({ days, hours, minutes, seconds, isPast: false });
       } catch {

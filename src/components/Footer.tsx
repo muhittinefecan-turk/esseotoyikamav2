@@ -7,12 +7,14 @@ interface FooterProps {
   business: BusinessConfig;
   isDarkMode: boolean;
   onScrollToTop: () => void;
+  onOpenAdmin?: () => void;
 }
 
 export const Footer: React.FC<FooterProps> = ({
   business,
   isDarkMode,
   onScrollToTop,
+  onOpenAdmin,
 }) => {
   return (
     <footer className={`border-t transition-colors ${
@@ -105,8 +107,20 @@ export const Footer: React.FC<FooterProps> = ({
 
         {/* Bottom bar */}
         <div className="pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px]">
-          <div>
-            © 2017 – {new Date().getFullYear()} {business.name}. Tüm hakları saklıdır.
+          <div className="flex items-center gap-3">
+            <span>© 2017 – {new Date().getFullYear()} {business.name}. Tüm hakları saklıdır.</span>
+            {onOpenAdmin && (
+              <>
+                <span className="text-zinc-600">·</span>
+                <button
+                  type="button"
+                  onClick={onOpenAdmin}
+                  className="hover:text-amber-400 text-zinc-500 font-bold transition-colors cursor-pointer"
+                >
+                  Yönetici Paneli (/admin)
+                </button>
+              </>
+            )}
           </div>
 
           <button
