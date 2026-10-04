@@ -6,6 +6,7 @@ import {
   apiCreateAppointment, 
   apiUpdateAppointment, 
   apiDeleteAppointment,
+  apiCancelAppointment,
   apiFetchLoyaltyProfiles,
   apiSaveLoyaltyStamp,
   apiRedeemVoucher
@@ -30,8 +31,34 @@ export async function initializeDatabaseSync(): Promise<void> {
     if (serverApts && serverApts.length > 0) {
       const local = getAllStoredAppointments();
       const map = new Map<string, AppointmentData>();
-      for (const a of local) map.set(a.id, a);
-      for (const a of serverApts) map.set(a.id, a);
+      
+      // 1. Seed map with local appointments
+      for (const a of local) {
+        map.set(a.id, a);
+      }
+
+      // 2. Merge server appointments with respect to cancellation state
+      for (const serverApt of serverApts) {
+        const localApt = map.get(serverApt.id);
+        if (localApt) {
+          // If locally it was cancelled, PRESERVE CANCELLATION and push to server!
+          if (localApt.status === 'cancelled') {
+            map.set(serverApt.id, localApt);
+            if (serverApt.status !== 'cancelled') {
+              apiCancelAppointment(localApt.id, localApt.cancelledBy || 'customer', localApt.cancellationReason).catch(() => {});
+            }
+          } else if (serverApt.status === 'cancelled') {
+            // Server cancelled it, so keep cancelled locally too
+            map.set(serverApt.id, serverApt);
+          } else {
+            // Keep the latest version
+            map.set(serverApt.id, { ...serverApt, ...localApt });
+          }
+        } else {
+          map.set(serverApt.id, serverApt);
+        }
+      }
+
       const merged = Array.from(map.values()).sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
@@ -283,6 +310,11 @@ export function cancelAppointment(
       });
     }
 
+    // Sync cancellation immediately to the persistent server database
+    apiCancelAppointment(id, cancelledBy, cancellationReason).catch((err) => {
+      console.warn('Failed to sync cancellation to server:', err);
+    });
+
     dispatchDataSync();
     return {
       ...apt,
@@ -327,6 +359,14 @@ export function reactivateAppointment(id: string): AppointmentData | null {
       plate: apt.customer.plateNumber,
       customerName: apt.customer.fullName,
     });
+
+    // Sync reactivation to backend server database
+    apiUpdateAppointment(id, {
+      status: 'confirmed',
+      cancelledBy: undefined,
+      cancelledAt: undefined,
+      cancellationReason: undefined,
+    }).catch(() => {});
 
     dispatchDataSync();
     return { ...apt, status: 'confirmed' };

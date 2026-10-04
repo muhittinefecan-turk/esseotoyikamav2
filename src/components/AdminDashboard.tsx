@@ -73,6 +73,7 @@ import {
 } from '../utils/notifications';
 import { QrCodeScannerModal } from './QrCodeScannerModal';
 import { QuickNotificationDrawer } from './QuickNotificationDrawer';
+import { calculateLiveAnalytics } from '../utils/analytics';
 
 interface AdminDashboardProps {
   business: BusinessConfig;

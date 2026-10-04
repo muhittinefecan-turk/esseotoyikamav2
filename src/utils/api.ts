@@ -62,6 +62,21 @@ export async function apiDeleteAppointment(id: string): Promise<boolean> {
   }
 }
 
+// Cancel appointment in automated database
+export async function apiCancelAppointment(id: string, cancelledBy: 'customer' | 'admin', reason?: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/appointments/${id}/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cancelledBy, reason }),
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('API cancel appointment failed:', err);
+    return false;
+  }
+}
+
 // Fetch loyalty profiles from automated database
 export async function apiFetchLoyaltyProfiles(): Promise<LoyaltyCustomerProfile[]> {
   try {

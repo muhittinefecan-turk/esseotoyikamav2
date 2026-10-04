@@ -266,6 +266,64 @@ async function startServer() {
     });
   });
 
+  // Live Analytics Stats (/api/stats)
+  app.get('/api/stats', (req: Request, res: Response) => {
+    const todayStr = (req.query.date as string) || new Date().toISOString().split('T')[0];
+    const apts = db.getAppointments();
+    const loyalty = db.getLoyaltyProfiles();
+
+    const todayApts = apts.filter((a) => a.date === todayStr);
+    const completedToday = todayApts.filter((a) => a.status === 'completed');
+    const activeToday = todayApts.filter((a) => a.status !== 'cancelled');
+    const cancelledToday = todayApts.filter((a) => a.status === 'cancelled');
+
+    const estimatedRevenue = activeToday.reduce((sum, a) => {
+      const sCount = a.selectedServices?.length || 1;
+      return sum + (sCount * 450);
+    }, 0);
+
+    const popularServicesTally: Record<string, number> = {};
+    for (const a of apts.filter((x) => x.status !== 'cancelled')) {
+      for (const s of a.selectedServices || []) {
+        popularServicesTally[s.name] = (popularServicesTally[s.name] || 0) + 1;
+      }
+    }
+
+    const totalServices = Object.values(popularServicesTally).reduce((a, b) => a + b, 0) || 1;
+    const popularServices = Object.entries(popularServicesTally)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+      .map(([name, count]) => ({
+        name,
+        count,
+        share: `${Math.round((count / totalServices) * 100)}%`,
+        sharePercent: Math.round((count / totalServices) * 100),
+      }));
+
+    const peronOccupancy = [1, 2, 3, 4].map((pNum) => {
+      const count = activeToday.filter((a) => a.time.includes(`${pNum}. Peron`)).length;
+      return {
+        peronNumber: pNum,
+        peron: `${pNum}. Peron`,
+        count: `${count} Araç`,
+        rate: `%${Math.min(100, Math.round((count / 8) * 100))}`,
+        ratePercent: Math.min(100, Math.round((count / 8) * 100)),
+      };
+    });
+
+    res.json({
+      todayStr,
+      completedTodayCount: completedToday.length,
+      activeTodayCount: activeToday.length,
+      cancelledTodayCount: cancelledToday.length,
+      estimatedDailyRevenue: estimatedRevenue,
+      averageWashMinutes: 45,
+      loyaltyGiftEligibleCount: loyalty.filter((p) => p.stamps >= 5).length,
+      popularServices,
+      peronOccupancy,
+    });
+  });
+
   // Appointments
   app.get('/api/appointments', (_req: Request, res: Response) => {
     res.json(db.getAppointments());
@@ -312,6 +370,30 @@ async function startServer() {
       }
 
       const updated = db.saveAppointment({ ...current, ...patch, id });
+      return res.json(updated);
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/appointments/:id/cancel', (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { cancelledBy, reason } = req.body;
+      const apts = db.getAppointments();
+      const current = apts.find((a) => a.id === id);
+      if (!current) {
+        return res.status(404).json({ error: 'Randevu bulunamadı' });
+      }
+
+      const updated = db.saveAppointment({
+        ...current,
+        status: 'cancelled',
+        cancelledBy: cancelledBy || 'customer',
+        cancelledAt: new Date().toISOString(),
+        cancellationReason: reason || 'İptal edildi',
+      });
+
       return res.json(updated);
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
