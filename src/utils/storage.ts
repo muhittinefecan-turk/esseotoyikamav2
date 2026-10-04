@@ -1,6 +1,15 @@
 import { AppointmentData, BusinessConfig, CustomerFormData, LoyaltyCustomerProfile, StampHistoryItem, WashStage, VehicleInspectionPhoto } from '../types';
 import { DEFAULT_BUSINESS_CONFIG } from '../data/businessConfig';
 import { logSystemEvent } from './notifications';
+import { 
+  apiFetchAppointments, 
+  apiCreateAppointment, 
+  apiUpdateAppointment, 
+  apiDeleteAppointment,
+  apiFetchLoyaltyProfiles,
+  apiSaveLoyaltyStamp,
+  apiRedeemVoucher
+} from './api';
 
 const APPOINTMENTS_KEY = 'esse_local_appointments_v3';
 const LOYALTY_PROFILES_KEY = 'esse_loyalty_profiles_v2';
@@ -12,6 +21,40 @@ function dispatchDataSync() {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('esse_data_updated'));
   }
+}
+
+// Automatic 2-Way Sync with Backend Database
+export async function initializeDatabaseSync(): Promise<void> {
+  try {
+    const serverApts = await apiFetchAppointments();
+    if (serverApts && serverApts.length > 0) {
+      const local = getAllStoredAppointments();
+      const map = new Map<string, AppointmentData>();
+      for (const a of local) map.set(a.id, a);
+      for (const a of serverApts) map.set(a.id, a);
+      const merged = Array.from(map.values()).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(merged));
+    }
+
+    const serverLoyalty = await apiFetchLoyaltyProfiles();
+    if (serverLoyalty && serverLoyalty.length > 0) {
+      const local = getLoyaltyProfiles();
+      const map = new Map<string, LoyaltyCustomerProfile>();
+      for (const p of local) map.set(p.plate, p);
+      for (const p of serverLoyalty) map.set(p.plate, p);
+      localStorage.setItem(LOYALTY_PROFILES_KEY, JSON.stringify(Array.from(map.values())));
+    }
+
+    dispatchDataSync();
+  } catch (err) {
+    console.warn('Automated database initial sync:', err);
+  }
+}
+
+if (typeof window !== 'undefined') {
+  initializeDatabaseSync();
 }
 
 // ----------------------------------------------------
@@ -75,6 +118,9 @@ export function saveAppointmentToStorage(appointment: AppointmentData): void {
       customerName: appointment.customer.fullName,
     });
 
+    // Sync to backend automated database
+    apiCreateAppointment(appointment).catch(() => {});
+
     dispatchDataSync();
   } catch (e) {
     console.error('Failed to save appointment to localStorage', e);
@@ -118,6 +164,9 @@ export function approveAppointment(id: string): AppointmentData | null {
         customerName: apt.customer.fullName,
       });
     }
+
+    // Sync to backend database
+    apiUpdateAppointment(id, { status: newStatus }).catch(() => {});
 
     dispatchDataSync();
     return { ...apt, status: newStatus };
@@ -292,6 +341,10 @@ export function deleteStoredAppointment(id: string): void {
     const current = getAllStoredAppointments();
     const updated = current.filter((a) => a.id !== id);
     localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(updated));
+    
+    // Sync to backend automated database
+    apiDeleteAppointment(id).catch(() => {});
+
     dispatchDataSync();
   } catch (e) {
     console.error('Failed to delete appointment from localStorage', e);
