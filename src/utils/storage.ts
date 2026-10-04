@@ -1,4 +1,4 @@
-import { AppointmentData, BusinessConfig, CustomerFormData, LoyaltyCustomerProfile, StampHistoryItem } from '../types';
+import { AppointmentData, BusinessConfig, CustomerFormData, LoyaltyCustomerProfile, StampHistoryItem, WashStage, VehicleInspectionPhoto } from '../types';
 import { DEFAULT_BUSINESS_CONFIG } from '../data/businessConfig';
 import { logSystemEvent } from './notifications';
 
@@ -524,4 +524,179 @@ export function saveCustomerProfile(data: CustomerFormData): void {
 
 export function getBusinessConfig(): BusinessConfig {
   return DEFAULT_BUSINESS_CONFIG;
+}
+
+// ----------------------------------------------------
+// LIVE WASH STAGES TRACKER (Feature 1)
+// ----------------------------------------------------
+
+export const WASH_STAGE_LABELS: Record<WashStage, { name: string; desc: string; percent: number; icon: string }> = {
+  queue: { name: 'Sırada Bekliyor', desc: 'Araç peron sırasına alındı.', percent: 10, icon: '⏳' },
+  foam_prewash: { name: 'Köpük & Ön Yıkama', desc: 'Kir yumuşatıcı pH nötr köpük ve ön basınçlı durulama.', percent: 30, icon: '🫧' },
+  rim_underbody: { name: 'Jant & Davlumbaz', desc: 'Demir tozu arındırma ve davlumbaz temizliği.', percent: 50, icon: '🛞' },
+  interior_vacuum: { name: 'İç Detay & Vakum', desc: 'Koltuk ve taban vakumlama, toz alma ve cam temizliği.', percent: 75, icon: '🧹' },
+  wax_drying: { name: 'Hızlı Cila & Kurulama', desc: 'Boya koruyucu ıslak cila ve mikrofiber kurulama.', percent: 90, icon: '✨' },
+  ready_for_pickup: { name: 'Teslime Hazır!', desc: 'İşlemler tamamlandı, araç park alanında anahtar bekliyor.', percent: 100, icon: '🎉' },
+};
+
+export function updateWashStage(appointmentId: string, stage: WashStage): AppointmentData | null {
+  try {
+    const list = getAllStoredAppointments();
+    const apt = list.find((a) => a.id === appointmentId);
+    if (!apt) return null;
+
+    const stageInfo = WASH_STAGE_LABELS[stage];
+    const stageUpdatedAt = new Date().toISOString();
+
+    const updated = list.map((a) => {
+      if (a.id === appointmentId) {
+        return {
+          ...a,
+          washStage: stage,
+          stageUpdatedAt,
+          status: stage === 'ready_for_pickup' ? 'confirmed' : 'in_progress',
+        };
+      }
+      return a;
+    });
+
+    localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(updated));
+
+    // Log & push notification to customer
+    logSystemEvent({
+      type: 'in_progress',
+      title: `${stageInfo.icon} ${stageInfo.name} (${apt.customer.plateNumber})`,
+      message: `Sn. ${apt.customer.fullName}, ${apt.customer.plateNumber} aracınızın işlemi: ${stageInfo.desc}`,
+      appointmentId: apt.id,
+      plate: apt.customer.plateNumber,
+      customerName: apt.customer.fullName,
+    });
+
+    dispatchDataSync();
+    return { ...apt, washStage: stage, stageUpdatedAt };
+  } catch (e) {
+    console.error('Failed to update wash stage', e);
+    return null;
+  }
+}
+
+// ----------------------------------------------------
+// VEHICLE INSPECTION PHOTOS (Feature 3)
+// ----------------------------------------------------
+
+export function addInspectionPhoto(appointmentId: string, photo: Omit<VehicleInspectionPhoto, 'id' | 'takenAt'>): VehicleInspectionPhoto | null {
+  try {
+    const list = getAllStoredAppointments();
+    const apt = list.find((a) => a.id === appointmentId);
+    if (!apt) return null;
+
+    const newPhoto: VehicleInspectionPhoto = {
+      id: `photo-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      takenAt: new Date().toISOString(),
+      ...photo,
+    };
+
+    const updated = list.map((a) => {
+      if (a.id === appointmentId) {
+        return {
+          ...a,
+          photos: [...(a.photos || []), newPhoto],
+        };
+      }
+      return a;
+    });
+
+    localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(updated));
+    dispatchDataSync();
+    return newPhoto;
+  } catch (e) {
+    console.error('Failed to add inspection photo', e);
+    return null;
+  }
+}
+
+// ----------------------------------------------------
+// VIP AUTO-LOOKUP BY PLATE (Feature 4)
+// ----------------------------------------------------
+
+export function findCustomerHistoryByPlate(plateInput: string): { 
+  customer: CustomerFormData | null; 
+  lastAppointment: AppointmentData | null;
+  loyaltyProfile: LoyaltyCustomerProfile | null;
+} {
+  const clean = plateInput.toUpperCase().replace(/\s+/g, '').trim();
+  if (clean.length < 5) {
+    return { customer: null, lastAppointment: null, loyaltyProfile: null };
+  }
+
+  const allApts = getAllStoredAppointments();
+  const matchApt = allApts.find(
+    (a) => a.customer.plateNumber.toUpperCase().replace(/\s+/g, '') === clean
+  );
+
+  const profiles = getLoyaltyProfiles();
+  const matchProfile = profiles.find(
+    (p) => p.plate.toUpperCase().replace(/\s+/g, '') === clean
+  ) || null;
+
+  const saved = getSavedCustomerProfile();
+  const matchSaved = saved && saved.plateNumber.toUpperCase().replace(/\s+/g, '') === clean ? saved : null;
+
+  const customer = matchApt?.customer || matchSaved || (matchProfile ? {
+    fullName: matchProfile.fullName,
+    phone: matchProfile.phone,
+    plateNumber: matchProfile.plate,
+    carModel: '',
+  } : null);
+
+  return {
+    customer,
+    lastAppointment: matchApt || null,
+    loyaltyProfile: matchProfile,
+  };
+}
+
+// ----------------------------------------------------
+// QR LOYALTY VOUCHER CODE (Feature 6)
+// ----------------------------------------------------
+
+export function getOrCreateVoucherForPlate(plate: string): string {
+  const clean = plate.toUpperCase().trim();
+  const profiles = getLoyaltyProfiles();
+  const profile = profiles.find((p) => p.plate === clean);
+
+  if (profile?.voucherCode) {
+    return profile.voucherCode;
+  }
+
+  const newCode = `ESSE-VIP-${Math.floor(1000 + Math.random() * 9000)}`;
+  if (profile) {
+    profile.voucherCode = newCode;
+    localStorage.setItem(LOYALTY_PROFILES_KEY, JSON.stringify(profiles));
+    dispatchDataSync();
+  }
+  return newCode;
+}
+
+export function redeemVoucherCode(codeOrPlate: string): { success: boolean; message: string; profile?: LoyaltyCustomerProfile } {
+  const clean = codeOrPlate.toUpperCase().trim();
+  const profiles = getLoyaltyProfiles();
+  const profile = profiles.find(
+    (p) => p.voucherCode?.toUpperCase() === clean || p.plate === clean
+  );
+
+  if (!profile) {
+    return { success: false, message: 'Geçersiz veya bulunamayan kupon kodu / plaka.' };
+  }
+
+  if (profile.stamps < 5 && !profile.voucherCode) {
+    return { success: false, message: 'Bu müşterinin henüz 5/5 damgası dolmamış.' };
+  }
+
+  const updated = redeemGiftStamp(profile.plate);
+  return {
+    success: true,
+    message: `${profile.fullName} (${profile.plate}) için 5/5 Hediye Cilalı Yıkama hakkı başarıyla doğrulandı ve uygulandı!`,
+    profile: updated || undefined,
+  };
 }

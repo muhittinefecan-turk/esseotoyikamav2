@@ -23,38 +23,128 @@ import { CountdownWidget } from './components/CountdownWidget';
 import { CarCareGuide } from './components/CarCareGuide';
 import { FaqSection } from './components/FaqSection';
 import { AdminDashboard } from './components/AdminDashboard';
+import { NotificationPermissionBanner } from './components/NotificationPermissionBanner';
+import { WeatherWidget } from './components/WeatherWidget';
+import { LiveWashProgressTracker } from './components/LiveWashProgressTracker';
 import { useAppointmentNotificationWatcher } from './hooks/useAppointmentNotificationWatcher';
-import { Bell, X as XCloseIcon } from 'lucide-react';
+import { Bell, X as XCloseIcon, Zap } from 'lucide-react';
 
 import { 
   AppointmentData, 
   BusinessConfig, 
   CustomerFormData, 
   ServiceItem, 
-  VehicleCategory 
+  VehicleCategory,
+  SystemNotificationEvent
 } from './types';
 import { SERVICES_LIST } from './data/servicesData';
 import { VEHICLE_TYPES } from './data/businessConfig';
 import { 
+  getActiveAppointments,
   getStoredAppointments, 
   saveAppointmentToStorage, 
+  cancelAppointment,
   deleteStoredAppointment, 
   getBusinessConfig,
   getSavedCustomerProfile,
   saveCustomerProfile
 } from './utils/storage';
 import { generateAppointmentId } from './utils/formatters';
+import { sendNativePushNotification } from './utils/notifications';
 
 export default function App() {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
   const [business] = useState<BusinessConfig>(() => getBusinessConfig());
-  const [appointments, setAppointments] = useState<AppointmentData[]>(() => getStoredAppointments());
+  const [appointments, setAppointments] = useState<AppointmentData[]>(() => getActiveAppointments());
   const { activeAlert, dismissAlert } = useAppointmentNotificationWatcher();
+
+  // Real-time live system notification alert state
+  const [liveSystemAlert, setLiveSystemAlert] = useState<{ id: string; title: string; message: string } | null>(null);
+
+  useEffect(() => {
+    if (liveSystemAlert) {
+      const timer = setTimeout(() => setLiveSystemAlert(null), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [liveSystemAlert]);
+
+  // Service Worker Registration & Real-Time System Notification Event Listener
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    // 1. Register Service Worker for native background notifications
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .catch((err) => console.warn('Service Worker registration failed:', err));
+
+      // 2. Service Worker Message Listener (e.g. notification click)
+      const handleSwMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'NOTIFICATION_CLICK') {
+          setIsAppointmentsModalOpen(true);
+        }
+      };
+
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+
+      // 3. Real-Time System Notification Listener (auto-triggers browser notification without manual WhatsApp)
+      const handleSystemNotification = (e: Event) => {
+        const customEvent = e as CustomEvent<SystemNotificationEvent>;
+        if (customEvent.detail) {
+          const ev = customEvent.detail;
+
+          // Dispatch to service worker for native notification tray
+          if (navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({
+              type: 'SHOW_NOTIFICATION',
+              title: ev.title,
+              body: ev.message,
+              icon: '/icon-192.png',
+              tag: ev.id,
+            });
+          } else {
+            sendNativePushNotification(ev.title, ev.message, ev.id);
+          }
+
+          // Show in-app live alert toast
+          setLiveSystemAlert({
+            id: ev.id,
+            title: ev.title,
+            message: ev.message,
+          });
+
+          // Sync data immediately
+          setAppointments(getActiveAppointments());
+        }
+      };
+
+      window.addEventListener('esse_notification_event', handleSystemNotification);
+
+      return () => {
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+        window.removeEventListener('esse_notification_event', handleSystemNotification);
+      };
+    }
+  }, []);
+
+  // Keep appointments state in live sync across any updates
+  useEffect(() => {
+    const handleSync = () => {
+      setAppointments(getActiveAppointments());
+    };
+    window.addEventListener('esse_data_updated', handleSync);
+    window.addEventListener('storage', handleSync);
+    return () => {
+      window.removeEventListener('esse_data_updated', handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
+  }, []);
 
   // Stepper State
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [selectedVehicle, setSelectedVehicle] = useState<VehicleCategory>('sedan');
   const [selectedServices, setSelectedServices] = useState<ServiceItem[]>([SERVICES_LIST[0]]);
+  const [reschedulingAppointmentId, setReschedulingAppointmentId] = useState<string | null>(null);
 
   // Date and Time State
   const getInitialDate = () => {
@@ -187,6 +277,12 @@ export default function App() {
 
   // Proceed to Step 4
   const handleProceedToConfirmation = () => {
+    // If rescheduling an existing appointment, delete the old appointment so duplicates never occur
+    if (reschedulingAppointmentId) {
+      deleteStoredAppointment(reschedulingAppointmentId);
+      setReschedulingAppointmentId(null);
+    }
+
     const newAppointment: AppointmentData = {
       id: generateAppointmentId(),
       createdAt: new Date().toISOString(),
@@ -196,31 +292,25 @@ export default function App() {
       time: selectedTime,
       totalDurationMinutes: totalDuration,
       customer: { ...customerData },
-      status: 'pending',
+      status: 'confirmed',
     };
 
     setActiveAppointment(newAppointment);
     saveAppointmentToStorage(newAppointment);
-    setAppointments(getStoredAppointments());
+    setAppointments(getActiveAppointments());
     setCurrentStep(4);
     scrollToBooking();
   };
 
   const handleAppointmentSentViaWp = () => {
     if (activeAppointment) {
-      const updated: AppointmentData = {
-        ...activeAppointment,
-        status: 'sent_via_whatsapp',
-      };
-      setActiveAppointment(updated);
-      saveAppointmentToStorage(updated);
-      setAppointments(getStoredAppointments());
+      setAppointments(getActiveAppointments());
     }
   };
 
   const handleCancelAppointment = (aptToCancel: AppointmentData) => {
-    deleteStoredAppointment(aptToCancel.id);
-    setAppointments(getStoredAppointments());
+    cancelAppointment(aptToCancel.id, 'customer', 'Müşteri randevusunu iptal etti');
+    setAppointments(getActiveAppointments());
     if (activeAppointment?.id === aptToCancel.id) {
       setActiveAppointment(null);
     }
@@ -230,6 +320,7 @@ export default function App() {
   };
 
   const handleRebook = (pastApt: AppointmentData) => {
+    setReschedulingAppointmentId(pastApt.id);
     setSelectedVehicle(pastApt.vehicleType);
     setSelectedServices(pastApt.selectedServices);
     setSelectedDate(pastApt.date);
@@ -240,6 +331,7 @@ export default function App() {
   };
 
   const handleReset = () => {
+    setReschedulingAppointmentId(null);
     setCurrentStep(1);
     setSelectedServices([SERVICES_LIST[0]]);
     // Keep saved customer profile intact so customer doesn't have to re-enter info
@@ -327,6 +419,42 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Real-time System Notification Toast (Native Push event listener) */}
+      <AnimatePresence>
+        {liveSystemAlert && (
+          <motion.div
+            initial={{ opacity: 0, y: -25, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            transition={{ duration: 0.3 }}
+            className="fixed top-3 left-1/2 -translate-x-1/2 z-60 w-full max-w-lg px-4 pointer-events-none"
+          >
+            <div className="p-4 rounded-2xl bg-zinc-950/95 border border-amber-500/50 shadow-2xl text-zinc-100 flex items-start justify-between gap-3 pointer-events-auto backdrop-blur-xl">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-amber-500 text-black flex items-center justify-center shrink-0 font-black shadow-md shadow-amber-500/20">
+                  <Bell className="w-4 h-4 animate-bounce" />
+                </div>
+                <div>
+                  <div className="font-black text-xs text-amber-400">{liveSystemAlert.title}</div>
+                  <div className="text-[11px] text-zinc-300 mt-0.5 leading-snug">{liveSystemAlert.message}</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLiveSystemAlert(null)}
+                className="p-1 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                title="Kapat"
+              >
+                <XCloseIcon className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Top Notification Permission Banner */}
+      <NotificationPermissionBanner isDarkMode={isDarkMode} />
+
       {/* Top Navbar */}
       <Navbar
         business={business}
@@ -345,12 +473,41 @@ export default function App() {
           isDarkMode={isDarkMode}
         />
 
+        {/* Live Weather Forecast & 48-Hour Rain Guarantee Banner (Feature 2) */}
+        <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-2 pb-1">
+          <WeatherWidget isDarkMode={isDarkMode} />
+        </div>
+
+        {/* Live Wash Progress Tracker (Feature 1) */}
+        {(activeAppointment?.status === 'in_progress' || (appointments.length > 0 && appointments[0].status === 'in_progress')) && (
+          <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-2">
+            <LiveWashProgressTracker
+              appointment={activeAppointment || appointments[0]}
+              isDarkMode={isDarkMode}
+            />
+          </div>
+        )}
+
         {/* Live Appointment Countdown Widget (If appointment exists) */}
         <CountdownWidget
           appointment={activeAppointment || (appointments.length > 0 ? appointments[0] : null)}
           isDarkMode={isDarkMode}
           onViewAppointment={() => setIsAppointmentsModalOpen(true)}
         />
+
+        {/* Quick Rebook Bar for repeat customers (Feature 4) */}
+        {appointments.length > 0 && (
+          <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-2 flex items-center justify-end">
+            <button
+              type="button"
+              onClick={() => handleRebook(appointments[0])}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-bold transition-all cursor-pointer active:scale-95"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <span>⚡ Son Randevumu Tek Tıkla Tekrarla ({appointments[0].customer.plateNumber})</span>
+            </button>
+          </div>
+        )}
 
         {/* Booking App Area - DIRECTLY AT TOP WITHOUT SCROLLING */}
         <div ref={bookingRef} className="pt-2 pb-8 max-w-4xl mx-auto px-3 sm:px-6">

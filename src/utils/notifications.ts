@@ -35,23 +35,24 @@ export function getNativeNotificationPermission(): 'granted' | 'denied' | 'defau
   return Notification.permission;
 }
 
-export async function requestNativeNotificationPermission(): Promise<'granted' | 'denied' | 'unsupported'> {
+export async function requestNativeNotificationPermission(): Promise<'granted' | 'denied' | 'default' | 'unsupported'> {
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return 'unsupported';
   }
 
   try {
+    // Ensure service worker is registered for background notification handling
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
-      playNotificationChime();
-      try {
-        new Notification('🔔 Bildirimler Aktif Edildi (Esse Detailing)', {
-          body: 'Randevu durum değişiklikleriniz (Onay, Yıkamada, Tamamlandı, İptal) anlık olarak bildirilecektir.',
-          icon: '/favicon.ico',
-        });
-      } catch (err) {
-        console.warn('Native notification display error:', err);
-      }
+      sendNativePushNotification(
+        '🔔 Bildirimler Aktif Edildi (Esse Detailing)',
+        'Randevu durum değişiklikleriniz (Onay, Yıkamada, Tamamlandı, İptal) anlık olarak bildirilecektir.',
+        'esse-welcome'
+      );
     }
     return permission;
   } catch (err) {
@@ -60,18 +61,44 @@ export async function requestNativeNotificationPermission(): Promise<'granted' |
   }
 }
 
-export function sendNativePushNotification(title: string, body: string, tag?: string) {
+export async function sendNativePushNotification(title: string, body: string, tag?: string) {
   playNotificationChime();
 
-  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-    try {
-      new Notification(title, {
-        body,
-        icon: '/favicon.ico',
-        tag: tag || 'esse-status-update',
-      });
-    } catch (err) {
-      console.warn('Notification failed:', err);
+  if (typeof window === 'undefined') return;
+
+  if ('Notification' in window && Notification.permission === 'granted') {
+    let shownViaSw = false;
+
+    // 1. Prefer Service Worker Registration showNotification (supported on Android PWA and background tabs)
+    if ('serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        if (reg && typeof reg.showNotification === 'function') {
+          await reg.showNotification(title, {
+            body,
+            icon: '/icon-192.png',
+            badge: '/icon-192.png',
+            tag: tag || 'esse-status-update',
+            renotify: true,
+          } as NotificationOptions & { renotify?: boolean; badge?: string });
+          shownViaSw = true;
+        }
+      } catch {
+        // Fallback to standard window Notification
+      }
+    }
+
+    // 2. Fallback to standard window Notification constructor
+    if (!shownViaSw) {
+      try {
+        new Notification(title, {
+          body,
+          icon: '/icon-192.png',
+          tag: tag || 'esse-status-update',
+        });
+      } catch (err) {
+        console.warn('Native notification failed:', err);
+      }
     }
   }
 }

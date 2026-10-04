@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { User, Phone, Mail, FileText, ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, Plus, Sparkles, Shield, Clock, HelpCircle, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { User, Phone, Mail, FileText, ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, Plus, Sparkles, Shield, Clock, HelpCircle, X, Award } from 'lucide-react';
 import { CustomerFormData } from '../types';
 import { formatPlate } from '../utils/formatters';
+import { findCustomerHistoryByPlate } from '../utils/storage';
 
 interface Step3CustomerInfoProps {
   formData: CustomerFormData;
@@ -72,6 +73,8 @@ export const Step3CustomerInfo: React.FC<Step3CustomerInfoProps> = ({
     }
   });
 
+  const [vipMatch, setVipMatch] = useState<{ fullName: string; carModel?: string; stamps?: number } | null>(null);
+
   const handleApplySavedProfile = () => {
     if (savedProfile) {
       onChange({
@@ -89,7 +92,30 @@ export const Step3CustomerInfo: React.FC<Step3CustomerInfoProps> = ({
     let cleaned = value;
     if (field === 'plateNumber') {
       cleaned = formatPlate(value);
+      if (cleaned.length >= 6) {
+        const found = findCustomerHistoryByPlate(cleaned);
+        if (found.customer) {
+          setVipMatch({
+            fullName: found.customer.fullName,
+            carModel: found.customer.carModel,
+            stamps: found.loyaltyProfile?.stamps,
+          });
+          onChange({
+            ...formData,
+            plateNumber: cleaned,
+            fullName: formData.fullName || found.customer.fullName,
+            phone: formData.phone || found.customer.phone,
+            carModel: formData.carModel || found.customer.carModel || '',
+          });
+          return;
+        } else {
+          setVipMatch(null);
+        }
+      } else {
+        setVipMatch(null);
+      }
     }
+
     onChange({
       ...formData,
       [field]: cleaned,
@@ -282,6 +308,25 @@ export const Step3CustomerInfo: React.FC<Step3CustomerInfoProps> = ({
               className="w-full px-3 py-3 font-mono-plate font-black text-base tracking-widest text-zinc-950 bg-transparent focus:outline-none uppercase placeholder:text-zinc-400 placeholder:normal-case placeholder:font-sans placeholder:text-sm"
             />
           </div>
+          {vipMatch && (
+            <motion.div
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-2 p-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-transparent border border-amber-500/30 text-xs text-amber-300 flex items-center justify-between gap-2"
+            >
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
+                <span>
+                  <strong>VIP Müşteri:</strong> Hoş geldiniz Sayın <strong>{vipMatch.fullName}</strong>! Bilgileriniz otomatik dolduruldu.
+                </span>
+              </div>
+              {vipMatch.stamps !== undefined && (
+                <span className="font-mono font-black text-[11px] bg-black/40 px-2 py-0.5 rounded text-amber-400 border border-amber-500/20 shrink-0">
+                  {vipMatch.stamps}/5 Damga
+                </span>
+              )}
+            </motion.div>
+          )}
           {errors.plateNumber && (
             <p className="mt-1 text-xs text-rose-400 flex items-center gap-1">
               <AlertCircle className="w-3.5 h-3.5" />

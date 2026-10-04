@@ -30,6 +30,22 @@ export interface CustomerFormData {
   notes?: string;
 }
 
+export interface VehicleInspectionPhoto {
+  id: string;
+  type: 'before' | 'after';
+  url: string;
+  label: string;
+  takenAt: string;
+}
+
+export type WashStage = 
+  | 'queue' 
+  | 'foam_prewash' 
+  | 'rim_underbody' 
+  | 'interior_vacuum' 
+  | 'wax_drying' 
+  | 'ready_for_pickup';
+
 export interface AppointmentData {
   id: string;
   createdAt: string;
@@ -45,6 +61,10 @@ export interface AppointmentData {
   cancelledAt?: string;
   cancellationReason?: string;
   stampedAt?: string;
+  washStage?: WashStage;
+  stageUpdatedAt?: string;
+  photos?: VehicleInspectionPhoto[];
+  estimatedPrice?: number;
 }
 
 export interface LoyaltyCustomerProfile {
@@ -54,6 +74,8 @@ export interface LoyaltyCustomerProfile {
   stamps: number; // 0 to 5
   history: StampHistoryItem[];
   lastUpdated: string;
+  voucherCode?: string;
+  voucherRedeemedAt?: string;
 }
 
 export interface StampHistoryItem {

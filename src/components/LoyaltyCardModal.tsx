@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { X, Gift, Sparkles, Check, ShieldCheck, Car } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { getCustomerStampsMap, getStoredAppointments } from '../utils/storage';
+import { getCustomerStampsMap, getStoredAppointments, getSavedCustomerProfile, getOrCreateVoucherForPlate } from '../utils/storage';
+import { QrCode, Copy, CheckCircle } from 'lucide-react';
 
 interface LoyaltyModalProps {
   isOpen: boolean;
@@ -14,26 +15,38 @@ interface LoyaltyModalProps {
 const MAX_STAMPS = 5;
 
 export const LoyaltyCardModal: React.FC<LoyaltyModalProps> = ({ isOpen, onClose, isDarkMode }) => {
-  const [stamps, setStamps] = useState<number>(1);
-  const [activePlate, setActivePlate] = useState<string>('09 DB 482');
+  const [stamps, setStamps] = useState<number>(0);
+  const [activePlate, setActivePlate] = useState<string>(() => {
+    const saved = getSavedCustomerProfile();
+    return saved?.plateNumber ? saved.plateNumber.toUpperCase().trim() : 'PLAKANIZ';
+  });
   const [hasCelebrated, setHasCelebrated] = useState<boolean>(false);
+  const [voucherCode, setVoucherCode] = useState<string>('');
+  const [copiedVoucher, setCopiedVoucher] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
+      const saved = getSavedCustomerProfile();
       const apts = getStoredAppointments();
       const stampsMap = getCustomerStampsMap();
-      if (apts.length > 0 && apts[0].customer?.plateNumber) {
-        const plate = apts[0].customer.plateNumber.toUpperCase().trim();
-        setActivePlate(plate);
-        setStamps(stampsMap[plate] !== undefined ? stampsMap[plate] : 1);
-      } else {
-        const firstEntry = Object.entries(stampsMap)[0];
-        if (firstEntry) {
-          setActivePlate(firstEntry[0]);
-          setStamps(firstEntry[1]);
-        } else {
-          setStamps(1);
+
+      let detectedPlate = '';
+      if (saved?.plateNumber) {
+        detectedPlate = saved.plateNumber.toUpperCase().trim();
+      } else if (apts.length > 0 && apts[0].customer?.plateNumber) {
+        detectedPlate = apts[0].customer.plateNumber.toUpperCase().trim();
+      }
+
+      if (detectedPlate) {
+        setActivePlate(detectedPlate);
+        const count = stampsMap[detectedPlate] !== undefined ? stampsMap[detectedPlate] : 0;
+        setStamps(count);
+        if (count >= MAX_STAMPS) {
+          setVoucherCode(getOrCreateVoucherForPlate(detectedPlate));
         }
+      } else {
+        setActivePlate('PLAKANIZ');
+        setStamps(0);
       }
     }
   }, [isOpen]);
@@ -50,6 +63,14 @@ export const LoyaltyCardModal: React.FC<LoyaltyModalProps> = ({ isOpen, onClose,
     }
   }, [stamps, hasCelebrated]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return typeof document !== 'undefined' ? createPortal(
@@ -62,17 +83,18 @@ export const LoyaltyCardModal: React.FC<LoyaltyModalProps> = ({ isOpen, onClose,
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 15 }}
         onClick={(e) => e.stopPropagation()}
-        className={`relative w-full max-w-lg rounded-3xl border glass-panel p-6 sm:p-8 shadow-[0_25px_60px_rgba(0,0,0,0.85)] text-zinc-100 ${
-          isDarkMode ? 'border-amber-500/35' : 'bg-white/95 border-amber-500/40 text-zinc-900'
+        className={`relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl border glass-panel p-6 sm:p-8 shadow-[0_25px_60px_rgba(0,0,0,0.85)] text-zinc-100 ${
+          isDarkMode ? 'border-amber-500/35 bg-zinc-950/95' : 'bg-white/95 border-amber-500/40 text-zinc-900'
         }`}
       >
-        {/* Close Button */}
+        {/* Prominent Sticky/Top Close Button */}
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-white/10 transition-colors cursor-pointer"
+          className="absolute top-4 right-4 z-50 p-2.5 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200 hover:text-white border border-white/20 transition-all cursor-pointer shadow-lg active:scale-95"
+          title="Kapat"
         >
-          <X className="w-5 h-5" />
+          <X className="w-5 h-5 stroke-[2.5]" />
         </button>
 
         {/* Header */}
@@ -175,6 +197,78 @@ export const LoyaltyCardModal: React.FC<LoyaltyModalProps> = ({ isOpen, onClose,
           </div>
         </div>
 
+        {/* 5/5 QR Code VIP Hediye Kuponu (Feature 6) */}
+        {stamps >= MAX_STAMPS && (
+          <div className="mt-4 p-5 rounded-3xl bg-gradient-to-br from-amber-500/20 via-zinc-900 to-black border-2 border-amber-400/50 space-y-3 text-center shadow-xl">
+            <div className="flex items-center justify-center gap-2 text-amber-400 font-black text-sm">
+              <Gift className="w-5 h-5 animate-bounce" />
+              <span>5/5 VIP HEDİYE ÇEKİNİZ HAZIR!</span>
+            </div>
+
+            <p className="text-xs text-zinc-300">
+              İstasyona geldiğinizde bu QR kodu veya onay kodunu kasadaki personele göstererek <strong>Ücretsiz Cilalı Yıkama</strong> hakkınızı hemen kullanabilirsiniz.
+            </p>
+
+            {/* QR Code Presentation Box */}
+            <div className="p-4 rounded-2xl bg-white text-black inline-block mx-auto shadow-2xl border-4 border-amber-400">
+              <div className="w-36 h-36 flex flex-col items-center justify-center relative">
+                {/* SVG QR Code Simulation with Center Logo */}
+                <svg viewBox="0 0 100 100" className="w-full h-full">
+                  {/* Outer corner finders */}
+                  <rect x="5" y="5" width="25" height="25" fill="black" />
+                  <rect x="9" y="9" width="17" height="17" fill="white" />
+                  <rect x="13" y="13" width="9" height="9" fill="black" />
+
+                  <rect x="70" y="5" width="25" height="25" fill="black" />
+                  <rect x="74" y="9" width="17" height="17" fill="white" />
+                  <rect x="78" y="13" width="9" height="9" fill="black" />
+
+                  <rect x="5" y="70" width="25" height="25" fill="black" />
+                  <rect x="9" y="74" width="17" height="17" fill="white" />
+                  <rect x="13" y="78" width="9" height="9" fill="black" />
+
+                  {/* Data blocks */}
+                  <rect x="35" y="10" width="8" height="8" fill="black" />
+                  <rect x="48" y="15" width="8" height="8" fill="black" />
+                  <rect x="10" y="35" width="8" height="8" fill="black" />
+                  <rect x="22" y="45" width="8" height="8" fill="black" />
+                  <rect x="35" y="35" width="12" height="12" fill="black" />
+                  <rect x="55" y="40" width="8" height="8" fill="black" />
+                  <rect x="70" y="35" width="8" height="8" fill="black" />
+                  <rect x="85" y="45" width="8" height="8" fill="black" />
+                  <rect x="35" y="60" width="8" height="8" fill="black" />
+                  <rect x="50" y="65" width="15" height="8" fill="black" />
+                  <rect x="70" y="70" width="8" height="8" fill="black" />
+                  <rect x="80" y="80" width="12" height="12" fill="black" />
+
+                  {/* Center badge */}
+                  <circle cx="50" cy="50" r="14" fill="#F59E0B" />
+                  <text x="50" y="54" fontSize="8" fontWeight="bold" textAnchor="middle" fill="black">ESSE</text>
+                </svg>
+              </div>
+            </div>
+
+            {/* Voucher Code Box */}
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <span className="font-mono font-black text-sm px-3 py-1.5 rounded-xl bg-black text-amber-400 border border-amber-500/40">
+                {voucherCode || 'VIP-ESSE-5000'}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(voucherCode || 'VIP-ESSE-5000');
+                  setCopiedVoucher(true);
+                  setTimeout(() => setCopiedVoucher(false), 2500);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-amber-500 text-black font-black text-xs flex items-center gap-1 shadow-sm cursor-pointer"
+              >
+                {copiedVoucher ? <CheckCircle className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedVoucher ? 'Kopyalandı!' : 'Kodu Kopyala'}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* SECURITY NOTE: Müşteri kendisi damga ekleyemez! Yalnızca işletme yetkilisi ekler */}
         <div className="mt-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-center space-y-1">
           <div className="flex items-center justify-center gap-1.5 text-xs font-black text-amber-400">
@@ -184,6 +278,18 @@ export const LoyaltyCardModal: React.FC<LoyaltyModalProps> = ({ isOpen, onClose,
           <p className="text-[11px] text-zinc-400 leading-relaxed">
             Damgalarınız, Esse Oto Yıkama istasyonumuzda tamamlanan her yıkama işlemi sonrasında yetkili personel tarafından sisteme kaydedilir ve kartınıza otomatik yansır.
           </p>
+        </div>
+
+        {/* Bottom Explicit Close Button */}
+        <div className="mt-5 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full py-3.5 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-zinc-100 font-black text-xs transition-all cursor-pointer shadow-md active:scale-95 flex items-center justify-center gap-2 border border-white/15"
+          >
+            <X className="w-4 h-4" />
+            <span>Pencereyi Kapat</span>
+          </button>
         </div>
       </motion.div>
     </div>,

@@ -12,6 +12,8 @@ interface MyAppointmentsModalProps {
   business: BusinessConfig;
   onRebook: (appointment: AppointmentData) => void;
   isDarkMode: boolean;
+  appointments?: AppointmentData[];
+  onDelete?: (id: string) => void;
 }
 
 export const MyAppointmentsModal: React.FC<MyAppointmentsModalProps> = ({
