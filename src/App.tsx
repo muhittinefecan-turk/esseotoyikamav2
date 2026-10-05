@@ -40,22 +40,20 @@ import {
 import { SERVICES_LIST } from './data/servicesData';
 import { VEHICLE_TYPES } from './data/businessConfig';
 import { 
-  getActiveAppointments,
-  getStoredAppointments, 
-  saveAppointmentToStorage, 
-  cancelAppointment,
-  deleteStoredAppointment, 
   getBusinessConfig,
+  getActiveAppointments,
   getSavedCustomerProfile,
   saveCustomerProfile
 } from './utils/storage';
 import {
-  initDatabaseSchema,
-  d1FetchAppointments,
-  d1CreateAppointment,
-  d1CancelAppointment,
-  d1DeleteAppointment,
-  d1SaveCustomer,
+  checkAndInitializeSchema,
+  fetchAppointmentsSQL,
+  fetchActiveAppointmentsSQL,
+  insertAppointmentSQL,
+  cancelAppointmentSQL,
+  deleteAppointmentSQL,
+  saveCustomerSQL,
+  fetchCustomerSQL,
 } from './services/db';
 import { generateAppointmentId } from './utils/formatters';
 import { sendNativePushNotification } from './utils/notifications';
@@ -63,7 +61,7 @@ import { sendNativePushNotification } from './utils/notifications';
 export default function App() {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
   const [business] = useState<BusinessConfig>(() => getBusinessConfig());
-  const [appointments, setAppointments] = useState<AppointmentData[]>(() => getActiveAppointments());
+  const [appointments, setAppointments] = useState<AppointmentData[]>([]);
   const { activeAlert, dismissAlert } = useAppointmentNotificationWatcher();
 
   // Real-time live system notification alert state
@@ -137,27 +135,36 @@ export default function App() {
 
   // Keep appointments state in live sync across any updates & initial D1 load
   useEffect(() => {
-    // Initial fetch from persistent Cloudflare D1
-    d1FetchAppointments().then((apts) => {
-      if (apts && apts.length > 0) {
-        setAppointments(apts.filter((a) => a.status !== 'cancelled' && a.status !== 'completed'));
+    // 1. Startup Table Schema Check (appointments, customers, loyalty)
+    checkAndInitializeSchema().catch(() => {});
+
+    // 2. Fetch Active Appointments via SQL
+    fetchActiveAppointmentsSQL().then((list) => {
+      setAppointments(list);
+    });
+
+    // 3. Load Saved Customer Profile via SQL
+    fetchCustomerSQL().then((cust) => {
+      if (cust) {
+        setCustomerData({
+          fullName: cust.fullName || '',
+          phone: cust.phone || '',
+          email: cust.email || '',
+          plateNumber: cust.plateNumber || '',
+          carModel: cust.carModel || '',
+          notes: '',
+        });
       }
     });
 
     const handleSync = () => {
-      d1FetchAppointments().then((apts) => {
-        if (apts && apts.length > 0) {
-          setAppointments(apts.filter((a) => a.status !== 'cancelled' && a.status !== 'completed'));
-        } else {
-          setAppointments(getActiveAppointments());
-        }
+      fetchActiveAppointmentsSQL().then((list) => {
+        setAppointments(list);
       });
     };
     window.addEventListener('esse_data_updated', handleSync);
-    window.addEventListener('storage', handleSync);
     return () => {
       window.removeEventListener('esse_data_updated', handleSync);
-      window.removeEventListener('storage', handleSync);
     };
   }, []);
 
@@ -205,6 +212,7 @@ export default function App() {
   const handleUpdateCustomerData = (data: CustomerFormData) => {
     setCustomerData(data);
     saveCustomerProfile(data);
+    saveCustomerSQL(data).catch(() => {});
   };
 
   // Current Active Appointment
@@ -297,11 +305,10 @@ export default function App() {
   );
 
   // Proceed to Step 4
-  const handleProceedToConfirmation = () => {
+  const handleProceedToConfirmation = async () => {
     // If rescheduling an existing appointment, delete the old appointment so duplicates never occur
     if (reschedulingAppointmentId) {
-      deleteStoredAppointment(reschedulingAppointmentId);
-      d1DeleteAppointment(reschedulingAppointmentId).catch(() => {});
+      await deleteAppointmentSQL(reschedulingAppointmentId);
       setReschedulingAppointmentId(null);
     }
 
@@ -318,28 +325,24 @@ export default function App() {
     };
 
     setActiveAppointment(newAppointment);
-    // Persist to Cloudflare D1 persistent SQL database and local mirror
-    saveAppointmentToStorage(newAppointment);
-    d1CreateAppointment(newAppointment, reschedulingAppointmentId || undefined).catch((err) => {
-      console.warn('D1 appointment creation notice:', err);
-    });
-    d1SaveCustomer(customerData).catch(() => {});
-
-    setAppointments(getActiveAppointments());
+    // Persist directly via SQL INSERT / D1 binding
+    await insertAppointmentSQL(newAppointment);
+    const updatedList = await fetchActiveAppointmentsSQL();
+    setAppointments(updatedList);
     setCurrentStep(4);
     scrollToBooking();
   };
 
   const handleAppointmentSentViaWp = () => {
     if (activeAppointment) {
-      setAppointments(getActiveAppointments());
+      fetchActiveAppointmentsSQL().then(setAppointments);
     }
   };
 
-  const handleCancelAppointment = (aptToCancel: AppointmentData) => {
-    cancelAppointment(aptToCancel.id, 'customer', 'Müşteri randevusunu iptal etti');
-    d1CancelAppointment(aptToCancel.id, 'customer', 'Müşteri randevusunu iptal etti').catch(() => {});
-    setAppointments(getActiveAppointments());
+  const handleCancelAppointment = async (aptToCancel: AppointmentData) => {
+    await cancelAppointmentSQL(aptToCancel.id, 'customer', 'Müşteri randevusunu iptal etti');
+    const updatedList = await fetchActiveAppointmentsSQL();
+    setAppointments(updatedList);
     if (activeAppointment?.id === aptToCancel.id) {
       setActiveAppointment(null);
     }
@@ -359,12 +362,12 @@ export default function App() {
     scrollToBooking();
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     setReschedulingAppointmentId(null);
     setCurrentStep(1);
     setSelectedServices([SERVICES_LIST[0]]);
-    // Keep saved customer profile intact so customer doesn't have to re-enter info
-    const profile = getSavedCustomerProfile();
+    // Retrieve saved customer profile via SQL
+    const profile = await fetchCustomerSQL();
     setCustomerData({
       fullName: profile?.fullName || '',
       phone: profile?.phone || '',
@@ -377,10 +380,10 @@ export default function App() {
     scrollToBooking();
   };
 
-  const handleDeleteAppointment = (id: string) => {
-    deleteStoredAppointment(id);
-    d1DeleteAppointment(id).catch(() => {});
-    setAppointments(getStoredAppointments());
+  const handleDeleteAppointment = async (id: string) => {
+    await deleteAppointmentSQL(id);
+    const updatedList = await fetchAppointmentsSQL();
+    setAppointments(updatedList.filter((a) => a.status !== 'cancelled' && a.status !== 'completed'));
     if (activeAppointment?.id === id) {
       setActiveAppointment(null);
     }

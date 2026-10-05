@@ -52,35 +52,27 @@ import {
 import { SERVICES_LIST } from '../data/servicesData';
 import { formatTurkishDate, formatDuration } from '../utils/formatters';
 import {
-  getAllStoredAppointments,
-  getActiveAppointments,
-  getCancelledAppointments,
-  saveAppointmentToStorage,
-  approveAppointment,
-  completeAndAwardStamp,
-  cancelAppointment,
-  reactivateAppointment,
-  deleteStoredAppointment,
-  getLoyaltyProfiles,
-  setCustomerStampsDirect,
-  redeemGiftStamp,
-  updateWashStage,
-  addInspectionPhoto,
+  WASH_STAGE_LABELS,
   redeemVoucherCode,
-  WASH_STAGE_LABELS
+  redeemGiftStamp,
+  setCustomerStampsDirect
 } from '../utils/storage';
 import {
-  initDatabaseSchema,
-  d1FetchAppointments,
-  d1CreateAppointment,
-  d1UpdateAppointment,
-  d1CancelAppointment,
-  d1DeleteAppointment,
-  d1FetchLoyaltyProfiles,
-  d1SaveLoyaltyStamp,
-  d1RedeemVoucher,
-  d1GetHealth,
+  checkAndInitializeSchema,
+  fetchAppointmentsSQL,
+  fetchLoyaltyProfilesSQL,
+  insertAppointmentSQL,
+  updateAppointmentStatusSQL,
+  updateWashStageSQL,
+  cancelAppointmentSQL,
+  reactivateAppointmentSQL,
+  deleteAppointmentSQL,
+  addInspectionPhotoSQL,
+  saveLoyaltyStampSQL,
+  completeAndAwardStampSQL,
+  redeemVoucherSQL,
   executeD1Sql,
+  d1GetHealth,
   D1HealthStatus
 } from '../services/db';
 import {
@@ -123,7 +115,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem('esse_admin_auth') === 'true';
+    if (typeof window === 'undefined') return false;
+    return sessionStorage.getItem('esse_admin_auth') === 'true';
   });
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [passwordError, setPasswordError] = useState<string>('');
@@ -147,10 +140,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // QR Code Scanner Modal State
   const [isQrScannerOpen, setIsQrScannerOpen] = useState<boolean>(false);
 
-  // Appointments State
-  const [allAppointments, setAllAppointments] = useState<AppointmentData[]>(() => getAllStoredAppointments());
+  // Appointments State (Initialized empty, populated via SQL fetch)
+  const [allAppointments, setAllAppointments] = useState<AppointmentData[]>([]);
   const [systemEvents, setSystemEvents] = useState<SystemNotificationEvent[]>(() => getSystemEvents());
-  const [loyaltyProfiles, setLoyaltyProfiles] = useState<LoyaltyCustomerProfile[]>(() => getLoyaltyProfiles());
+  const [loyaltyProfiles, setLoyaltyProfiles] = useState<LoyaltyCustomerProfile[]>([]);
 
   // Filter & Search states
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -214,33 +207,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Synchronize data on external updates or storage events
+  // Synchronize data via SQL queries
   const reloadData = async () => {
     try {
       const [serverApts, serverLoyalty, health] = await Promise.all([
-        d1FetchAppointments(),
-        d1FetchLoyaltyProfiles(),
+        fetchAppointmentsSQL(),
+        fetchLoyaltyProfilesSQL(),
         d1GetHealth(),
       ]);
-      if (serverApts && serverApts.length > 0) {
-        setAllAppointments(serverApts);
-      } else {
-        setAllAppointments(getAllStoredAppointments());
-      }
-      if (serverLoyalty && serverLoyalty.length > 0) {
-        setLoyaltyProfiles(serverLoyalty);
-      } else {
-        setLoyaltyProfiles(getLoyaltyProfiles());
-      }
+      setAllAppointments(serverApts);
+      setLoyaltyProfiles(serverLoyalty);
       setD1Status(health);
-    } catch {
-      setAllAppointments(getAllStoredAppointments());
-      setLoyaltyProfiles(getLoyaltyProfiles());
+    } catch (err) {
+      console.warn('reloadData SQL error:', err);
     }
     setSystemEvents(getSystemEvents());
   };
 
   useEffect(() => {
+    checkAndInitializeSchema().catch(() => {});
     reloadData();
   }, []);
 
@@ -360,46 +345,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, [loyaltyProfiles, loyaltySearch, loyaltyStampFilter, loyaltySort]);
 
   // =========================================================================
-  // EXPLICIT EVENT HANDLERS REQUIRED BY SPECIFICATION
+  // EXPLICIT SQL EVENT HANDLERS REQUIRED BY SPECIFICATION
   // =========================================================================
 
-  // 1. handleApproveAppointment (Onayla / Yıkamaya Al)
-  const handleApproveAppointment = (aptId: string) => {
-    const res = approveAppointment(aptId);
-    if (res) {
-      d1UpdateAppointment(aptId, { status: res.status, washStage: res.washStage }).catch(() => {});
-      reloadData();
-      showToast(res.status === 'confirmed' 
-        ? 'Randevu onaylandı ve müşteriye bildirim iletildi!' 
-        : 'Araç yıkamaya alındı ve müşteriye bildirim iletildi!');
-    }
+  // 1. handleApproveAppointment (Onayla / Yıkamaya Al via SQL)
+  const handleApproveAppointment = async (aptId: string) => {
+    const apt = allAppointments.find((a) => a.id === aptId);
+    if (!apt) return;
+    const nextStatus = (apt.status === 'pending' || apt.status === 'sent_via_whatsapp') ? 'confirmed' : 'in_progress';
+    const nextStage = nextStatus === 'in_progress' ? 'foam_prewash' : 'queue';
+    await updateAppointmentStatusSQL(aptId, nextStatus, nextStage);
+    await reloadData();
+    showToast(nextStatus === 'confirmed' 
+      ? 'Randevu onaylandı ve müşteriye bildirim iletildi!' 
+      : 'Araç yıkamaya alındı ve müşteriye bildirim iletildi!');
   };
 
-  // 2. handleCompleteAppointment (Tamamla & Damga Ver)
-  const handleCompleteAppointment = (aptId: string) => {
-    const res = completeAndAwardStamp(aptId);
-    if (res) {
-      d1UpdateAppointment(aptId, { status: 'completed' }).catch(() => {});
-      reloadData();
-      showToast(`Randevu tamamlandı! Dijital karta +1 damga eklendi (${res.currentStamps}/5). Randevu aktif listeden kaldırıldı.`);
-    }
+  // 2. handleCompleteAppointment (Tamamla & Damga Ver via SQL)
+  const handleCompleteAppointment = async (aptId: string) => {
+    const res = await completeAndAwardStampSQL(aptId);
+    await reloadData();
+    showToast(`Randevu tamamlandı! Dijital karta +1 damga eklendi (${res.stamps}/5). Randevu aktif listeden kaldırıldı.`);
   };
 
-  // 3. handleCancelAppointment (Randevuyu İptal Et)
-  const handleCancelAppointment = (aptId: string) => {
-    const res = cancelAppointment(aptId, 'admin', 'İşletme yetkilisi tarafından iptal edildi');
-    if (res) {
-      d1CancelAppointment(aptId, 'admin', 'İşletme yetkilisi tarafından iptal edildi').catch(() => {});
-      reloadData();
-      showToast('Randevu iptal edildi, İptal Edilenler bölümüne taşındı ve müşteriye bildirim gönderildi.');
-    }
+  // 3. handleCancelAppointment (Randevuyu İptal Et via SQL)
+  const handleCancelAppointment = async (aptId: string) => {
+    await cancelAppointmentSQL(aptId, 'admin', 'İşletme yetkilisi tarafından iptal edildi');
+    await reloadData();
+    showToast('Randevu iptal edildi, İptal Edilenler bölümüne taşındı ve müşteriye bildirim gönderildi.');
   };
 
-  // 4. handleDeleteAppointment (Kalıcı Olarak Sil)
-  const handleDeleteAppointment = (aptId: string) => {
-    deleteStoredAppointment(aptId);
-    d1DeleteAppointment(aptId).catch(() => {});
-    reloadData();
+  // 4. handleDeleteAppointment (Kalıcı Olarak Sil via SQL)
+  const handleDeleteAppointment = async (aptId: string) => {
+    await deleteAppointmentSQL(aptId);
+    await reloadData();
     showToast('Randevu sistemden ve veri tabanından kalıcı olarak silindi.');
   };
 
@@ -408,41 +387,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     window.location.href = `tel:${phone}`;
   };
 
-  // 6. handleReactivateAppointment (İptal Edileni Tekrar Aktif Et)
-  const handleReactivateAppointment = (aptId: string) => {
-    const res = reactivateAppointment(aptId);
-    if (res) {
-      d1UpdateAppointment(aptId, {
-        status: 'confirmed',
-        cancelledBy: undefined,
-        cancelledAt: undefined,
-        cancellationReason: undefined,
-      }).catch(() => {});
-      reloadData();
-      showToast('Randevu yeniden onaylandı ve aktif randevular listesine taşındı.');
-    }
+  // 6. handleReactivateAppointment (İptal Edileni Tekrar Aktif Et via SQL)
+  const handleReactivateAppointment = async (aptId: string) => {
+    await reactivateAppointmentSQL(aptId);
+    await reloadData();
+    showToast('Randevu yeniden onaylandı ve aktif randevular listesine taşındı.');
   };
 
-  // 7. handleAdvanceWashStage (Aşama İlerletme - Feature 1)
-  const handleAdvanceWashStage = (apt: AppointmentData) => {
+  // 7. handleAdvanceWashStage (Aşama İlerletme via SQL)
+  const handleAdvanceWashStage = async (apt: AppointmentData) => {
     const stages: WashStage[] = ['queue', 'foam_prewash', 'rim_underbody', 'interior_vacuum', 'wax_drying', 'ready_for_pickup'];
     const current = apt.washStage || 'queue';
     const nextIdx = Math.min(stages.length - 1, stages.indexOf(current) + 1);
     const nextStage = stages[nextIdx];
-    const updated = updateWashStage(apt.id, nextStage);
-    if (updated) {
-      d1UpdateAppointment(apt.id, { washStage: nextStage, stageUpdatedAt: new Date().toISOString() }).catch(() => {});
-      reloadData();
-      showToast(`Aşama ilerletildi: ${WASH_STAGE_LABELS[nextStage].icon} ${WASH_STAGE_LABELS[nextStage].name}`);
-    }
+    await updateWashStageSQL(apt.id, nextStage);
+    await reloadData();
+    showToast(`Aşama ilerletildi: ${WASH_STAGE_LABELS[nextStage].icon} ${WASH_STAGE_LABELS[nextStage].name}`);
   };
 
   // Cloudflare D1 Setup Utility: Initialize Schema
   const handleRunD1SchemaInit = async () => {
     setIsD1Initializing(true);
-    setD1InitLogs(['⚡ Cloudflare D1 SQL şeması başlatılıyor...']);
+    setD1InitLogs(['⚡ Cloudflare D1 SQL şeması kontrol ediliyor...']);
     try {
-      const res = await initDatabaseSchema(true);
+      const res = await checkAndInitializeSchema(true);
       setD1InitLogs((prev) => [
         ...prev,
         `✅ ${res.message}`,
@@ -466,7 +434,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       const res = await executeD1Sql(sqlQueryInput.trim());
       if (res.success) {
-        setSqlQueryResults(res.results);
+        setSqlQueryResults(res.results || []);
         showToast(`SQL sorgusu tamamlandı (${res.results?.length || 0} satır).`);
       } else {
         showToast(`SQL Hatası: ${res.error || 'Bilinmeyen hata'}`);
@@ -478,36 +446,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // 8. handleAddInspectionPhoto (Araç Fotoğrafı Ekleme - Feature 3)
-  const handleAddInspectionPhoto = (e: React.FormEvent) => {
+  // 8. handleAddInspectionPhoto (Araç Fotoğrafı Ekleme via SQL)
+  const handleAddInspectionPhoto = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!photoModalApt || !photoUrl.trim()) {
       showToast('Lütfen geçerli bir görsel URL giriniz veya çekilen fotoğrafı seçiniz.');
       return;
     }
-    addInspectionPhoto(photoModalApt.id, {
+    await addInspectionPhotoSQL(photoModalApt.id, {
       type: photoType,
       url: photoUrl.trim(),
       label: photoLabel || (photoType === 'before' ? 'Kabul Durumu' : 'Teslim Parlaklığı'),
     });
-    reloadData();
+    await reloadData();
     setPhotoModalApt(null);
     setPhotoUrl('');
     showToast('Araç fotoğrafı başarıyla kaydedildi.');
   };
 
-  // 9. handleVerifyAndRedeemVoucher (QR Kupon Doğrulama - Feature 6)
-  const handleVerifyAndRedeemVoucher = (e: React.FormEvent) => {
+  // 9. handleVerifyAndRedeemVoucher (QR Kupon Doğrulama via SQL)
+  const handleVerifyAndRedeemVoucher = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!voucherInput.trim()) {
       showToast('Lütfen kupon kodu veya plaka giriniz.');
       return;
     }
-    const result = redeemVoucherCode(voucherInput.trim());
-    d1RedeemVoucher(voucherInput.trim()).catch(() => {});
+    const result = await redeemVoucherSQL(voucherInput.trim());
     setVoucherResult(result);
     if (result.success) {
-      reloadData();
+      await reloadData();
       showToast(result.message);
     }
   };
@@ -538,25 +505,27 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
   };
 
   // 11. handleQrScan (Kameradan QR Okunduğunda)
-  const handleQrScan = (code: string) => {
+  const handleQrScan = async (code: string) => {
     setVoucherInput(code);
     setIsQrScannerOpen(false);
-    const result = redeemVoucherCode(code);
+    const result = await redeemVoucherSQL(code);
     setVoucherResult(result);
     if (result.success) {
-      reloadData();
+      await reloadData();
       showToast(result.message);
     } else {
       showToast(`QR Algılandı (${code}): ${result.message}`);
     }
   };
 
-  // Handle Authentication Submission
+  // Handle Authentication Submission (sessionStorage / memory only)
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (passwordInput === SECURE_ADMIN_PASSWORD) {
       setIsAuthenticated(true);
-      localStorage.setItem('esse_admin_auth', 'true');
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('esse_admin_auth', 'true');
+      }
       setPasswordError('');
       setPasswordInput('');
     } else {
@@ -566,13 +535,15 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
 
   const handleLogout = () => {
     setIsAuthenticated(false);
-    localStorage.removeItem('esse_admin_auth');
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('esse_admin_auth');
+    }
     setPasswordInput('');
     setPasswordError('');
   };
 
-  // Manual appointment creation
-  const handleCreateManualAppointment = (e: React.FormEvent) => {
+  // Manual appointment creation via SQL INSERT
+  const handleCreateManualAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newApt.fullName || !newApt.plateNumber || !newApt.phone) {
       showToast('Lütfen tüm zorunlu alanları doldurunuz.');
@@ -597,9 +568,8 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
       status: 'confirmed',
     };
 
-    saveAppointmentToStorage(createdApt);
-    d1CreateAppointment(createdApt).catch(() => {});
-    reloadData();
+    await insertAppointmentSQL(createdApt);
+    await reloadData();
     setIsAddModalOpen(false);
     showToast(`Yeni randevu başarıyla eklendi (#${createdApt.id})`);
 
@@ -1867,11 +1837,12 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
                     </span>
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
                         const updated = redeemGiftStamp(selectedLoyaltyCustomer.plate);
+                        await redeemVoucherSQL(selectedLoyaltyCustomer.plate);
                         if (updated) {
                           setSelectedLoyaltyCustomer(updated);
-                          reloadData();
+                          await reloadData();
                           showToast('🎁 Hediye yıkama hakkı teslim edildi ve kart sıfırlandı!');
                         }
                       }}
@@ -1887,11 +1858,12 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     const next = Math.min(5, selectedLoyaltyCustomer.stamps + 1);
                     const updated = setCustomerStampsDirect(selectedLoyaltyCustomer.plate, next);
+                    await saveLoyaltyStampSQL(selectedLoyaltyCustomer.plate, next, selectedLoyaltyCustomer.fullName, selectedLoyaltyCustomer.phone);
                     setSelectedLoyaltyCustomer(updated);
-                    reloadData();
+                    await reloadData();
                     showToast(`${selectedLoyaltyCustomer.plate} için +1 damga eklendi.`);
                   }}
                   className="flex-1 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-black text-xs border border-amber-500/30 cursor-pointer transition-colors"
@@ -1901,11 +1873,12 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
 
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     const next = Math.max(0, selectedLoyaltyCustomer.stamps - 1);
                     const updated = setCustomerStampsDirect(selectedLoyaltyCustomer.plate, next);
+                    await saveLoyaltyStampSQL(selectedLoyaltyCustomer.plate, next, selectedLoyaltyCustomer.fullName, selectedLoyaltyCustomer.phone);
                     setSelectedLoyaltyCustomer(updated);
-                    reloadData();
+                    await reloadData();
                     showToast(`${selectedLoyaltyCustomer.plate} için 1 damga silindi.`);
                   }}
                   className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-300 font-bold text-xs border border-white/10 cursor-pointer transition-colors"
@@ -1915,10 +1888,11 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
 
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     const updated = setCustomerStampsDirect(selectedLoyaltyCustomer.plate, 0);
+                    await saveLoyaltyStampSQL(selectedLoyaltyCustomer.plate, 0, selectedLoyaltyCustomer.fullName, selectedLoyaltyCustomer.phone);
                     setSelectedLoyaltyCustomer(updated);
-                    reloadData();
+                    await reloadData();
                     showToast('Damgalar sıfırlandı.');
                   }}
                   className="px-4 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-bold text-xs border border-rose-500/25 cursor-pointer transition-colors"

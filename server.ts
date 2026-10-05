@@ -337,17 +337,182 @@ async function startServer() {
   // Cloudflare D1 SQL Query Execution
   app.post('/api/d1/query', (req: Request, res: Response) => {
     try {
-      const { sql } = req.body;
+      const { sql, params = [] } = req.body;
       const sqlLower = (sql || '').toLowerCase().trim();
+
+      // 1. Table existence check (sqlite_master)
+      if (sqlLower.includes('sqlite_master')) {
+        return res.json({
+          success: true,
+          results: [
+            { name: 'appointments' },
+            { name: 'customers' },
+            { name: 'loyalty' },
+            { name: 'loyalty_profiles' },
+            { name: 'system_notifications' },
+          ],
+          meta: { changes: 0 },
+        });
+      }
+
+      // 2. Appointments Queries
       if (sqlLower.startsWith('select') && sqlLower.includes('appointments')) {
-        return res.json({ success: true, results: db.getAppointments(), meta: { changes: 0 } });
+        let results = db.getAppointments();
+        if (params.length > 0 && sqlLower.includes('where id =')) {
+          results = results.filter((a) => a.id === params[0]);
+        }
+        return res.json({ success: true, results, meta: { changes: 0 } });
       }
-      if (sqlLower.startsWith('select') && sqlLower.includes('loyalty')) {
-        return res.json({ success: true, results: db.getLoyaltyProfiles(), meta: { changes: 0 } });
+
+      if (sqlLower.startsWith('insert') && sqlLower.includes('appointments')) {
+        if (params.length >= 10) {
+          const [
+            id, createdAt, vehicleType, selectedServicesRaw, date, time,
+            totalDurationMinutes, customerFullName, customerPhone, customerPlateNumber,
+            customerCarModel, customerNotes, customerEmail, status, washStage,
+            stageUpdatedAt, adminNotes, cancelledBy, cancelledAt, cancellationReason, stampedAt, photosRaw
+          ] = params;
+
+          let selectedServices = [];
+          try {
+            selectedServices = typeof selectedServicesRaw === 'string' ? JSON.parse(selectedServicesRaw) : selectedServicesRaw;
+          } catch {}
+
+          let photos = [];
+          try {
+            photos = typeof photosRaw === 'string' ? JSON.parse(photosRaw) : photosRaw;
+          } catch {}
+
+          const apt = db.saveAppointment({
+            id,
+            createdAt: createdAt || new Date().toISOString(),
+            vehicleType: vehicleType || 'sedan',
+            selectedServices,
+            date,
+            time,
+            totalDurationMinutes: Number(totalDurationMinutes) || 45,
+            customer: {
+              fullName: customerFullName,
+              phone: customerPhone,
+              plateNumber: customerPlateNumber,
+              carModel: customerCarModel || '',
+              notes: customerNotes || '',
+              email: customerEmail || '',
+            },
+            status: status || 'confirmed',
+            washStage: washStage || 'queue',
+            stageUpdatedAt: stageUpdatedAt || null,
+            adminNotes: adminNotes || null,
+            cancelledBy: cancelledBy || null,
+            cancelledAt: cancelledAt || null,
+            cancellationReason: cancellationReason || null,
+            stampedAt: stampedAt || null,
+            photos,
+          });
+          return res.json({ success: true, results: [apt], meta: { changes: 1 } });
+        }
+        return res.json({ success: true, results: [], meta: { changes: 1 } });
       }
+
+      if (sqlLower.startsWith('update') && sqlLower.includes('appointments')) {
+        const id = params[params.length - 1];
+        if (id) {
+          const apts = db.getAppointments();
+          const target = apts.find((a) => a.id === id);
+          if (target) {
+            if (sqlLower.includes('wash_stage') && sqlLower.includes('stage_updated_at')) {
+              target.washStage = params[0];
+              target.stageUpdatedAt = params[1];
+            } else if (sqlLower.includes("status = 'cancelled'")) {
+              target.status = 'cancelled';
+              target.cancelledBy = params[0] || 'customer';
+              target.cancelledAt = params[1] || new Date().toISOString();
+              target.cancellationReason = params[2] || 'İptal edildi';
+            } else if (sqlLower.includes("status = 'confirmed'")) {
+              target.status = 'confirmed';
+              target.cancelledBy = undefined;
+              target.cancelledAt = undefined;
+              target.cancellationReason = undefined;
+            } else if (sqlLower.includes("status = 'completed'")) {
+              target.status = 'completed';
+            } else if (params[0]) {
+              target.status = params[0];
+            }
+            db.saveAppointment(target);
+          }
+        }
+        return res.json({ success: true, results: [], meta: { changes: 1 } });
+      }
+
+      if (sqlLower.startsWith('delete') && sqlLower.includes('appointments')) {
+        const id = params[0];
+        if (id) {
+          db.deleteAppointment(id);
+        }
+        return res.json({ success: true, results: [], meta: { changes: 1 } });
+      }
+
+      // 3. Loyalty Queries
+      if (sqlLower.startsWith('select') && (sqlLower.includes('loyalty') || sqlLower.includes('loyalty_profiles'))) {
+        let results = db.getLoyaltyProfiles();
+        if (params.length > 0 && sqlLower.includes('plate =')) {
+          const clean = String(params[0]).toUpperCase().trim();
+          results = results.filter((p) => p.plate.toUpperCase().trim() === clean || p.voucherCode === clean);
+        }
+        return res.json({ success: true, results, meta: { changes: 0 } });
+      }
+
+      if (sqlLower.startsWith('insert') && (sqlLower.includes('loyalty') || sqlLower.includes('loyalty_profiles'))) {
+        if (params.length >= 4) {
+          const [plate, fullName, phone, stamps, voucherCode] = params;
+          const profile = db.saveLoyaltyProfile({
+            plate: String(plate).toUpperCase().trim(),
+            fullName,
+            phone,
+            stamps: Number(stamps) || 0,
+            voucherCode: voucherCode || undefined,
+          });
+          return res.json({ success: true, results: [profile], meta: { changes: 1 } });
+        }
+        return res.json({ success: true, results: [], meta: { changes: 1 } });
+      }
+
+      if (sqlLower.startsWith('update') && (sqlLower.includes('loyalty') || sqlLower.includes('loyalty_profiles'))) {
+        const plate = params[params.length - 1];
+        if (plate) {
+          const clean = String(plate).toUpperCase().trim();
+          const profiles = db.getLoyaltyProfiles();
+          const target = profiles.find((p) => p.plate.toUpperCase().trim() === clean);
+          if (target) {
+            target.stamps = 0;
+            target.voucherCode = undefined;
+            target.voucherRedeemedAt = new Date().toISOString();
+            db.saveLoyaltyProfile(target);
+          }
+        }
+        return res.json({ success: true, results: [], meta: { changes: 1 } });
+      }
+
+      // 4. Customers Queries
       if (sqlLower.startsWith('select') && sqlLower.includes('customers')) {
         return res.json({ success: true, results: db.getCustomers(), meta: { changes: 0 } });
       }
+
+      if (sqlLower.startsWith('insert') && sqlLower.includes('customers')) {
+        if (params.length >= 3) {
+          const [plateNumber, fullName, phone, email, carModel, notes] = params;
+          db.saveCustomer({
+            plateNumber,
+            fullName,
+            phone,
+            email,
+            carModel,
+            notes,
+          });
+        }
+        return res.json({ success: true, results: [], meta: { changes: 1 } });
+      }
+
       return res.json({ success: true, results: [], meta: { changes: 1 } });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
