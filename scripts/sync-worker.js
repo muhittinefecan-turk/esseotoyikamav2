@@ -40,6 +40,17 @@ function updateWorkerFile(filePath) {
   }
 }
 
-updateWorkerFile(distWorkerPath);
 updateWorkerFile(publicWorkerPath);
+
+// Ensure .assetsignore exists in dist so Wrangler never mistakes worker files for static assets
+const distAssetsIgnorePath = path.join(rootDir, 'dist', '.assetsignore');
+fs.writeFileSync(distAssetsIgnorePath, "_worker.js\n", 'utf-8');
+console.log('✅ Created dist/.assetsignore to exclude _worker.js from static assets');
+
+// Clean up dist/_worker.js because the worker entry point is public/_worker.js
+if (fs.existsSync(distWorkerPath)) {
+  fs.unlinkSync(distWorkerPath);
+  console.log('🧹 Removed dist/_worker.js (Worker script is maintained at public/_worker.js)');
+}
+
 console.log('🚀 Worker static asset synchronization completed.');

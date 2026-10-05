@@ -7,14 +7,9 @@ compatibility_date = "2024-09-23"
 assets = { directory = "./dist", binding = "ASSETS" }
 
 # Cloudflare D1 SQL Veritabanı Entegrasyonu:
-# 1. Cloudflare hesabınızda D1 veritabanını oluşturmak için terminalde çalıştırın:
-#    npx wrangler d1 create esse-db
-# 2. Komut çıktısındaki "database_id" UUID değerini (örn: b46e91cb-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
-#    aşağıdaki satırlara ekleyip başlarındaki '#' karakterlerini kaldırın:
-#
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "esse-db"
-# database_id = "67be5690-37aa-43f5-9487-24715475e404"
+[[d1_databases]]
+binding = "DB"
+database_name = "esse-db"
+database_id = "67be5690-37aa-43f5-9487-24715475e404"
 
 

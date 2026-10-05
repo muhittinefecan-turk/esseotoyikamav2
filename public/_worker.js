@@ -148,6 +148,29 @@ async function initCloudflareD1Database(db) {
         last_updated TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS loyalty (
+        plate TEXT PRIMARY KEY,
+        full_name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        stamps INTEGER DEFAULT 0,
+        voucher_code TEXT,
+        voucher_redeemed_at TEXT,
+        history TEXT DEFAULT '[]',
+        last_updated TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS customers (
+        plate_number TEXT PRIMARY KEY,
+        full_name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        email TEXT,
+        car_model TEXT,
+        last_visit TEXT,
+        total_visits INTEGER DEFAULT 1,
+        notes TEXT,
+        created_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS system_notifications (
         id TEXT PRIMARY KEY,
         timestamp TEXT NOT NULL,
@@ -158,6 +181,10 @@ async function initCloudflareD1Database(db) {
         plate TEXT,
         customer_name TEXT
       );
+
+      CREATE INDEX IF NOT EXISTS idx_appointments_plate ON appointments(customer_plate_number);
+      CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(date);
+      CREATE INDEX IF NOT EXISTS idx_loyalty_voucher ON loyalty(voucher_code);
     `);
   } catch (err) {
     console.warn('Cloudflare D1 auto-migration notice:', err);

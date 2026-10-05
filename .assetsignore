@@ -1,0 +1,3 @@
+# Exclude server-side worker script from being uploaded as static public asset
+_worker.js
+dist/_worker.js
