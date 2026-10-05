@@ -15,6 +15,6 @@ assets = { directory = "./dist", binding = "ASSETS" }
 # [[d1_databases]]
 # binding = "DB"
 # database_name = "esse-db"
-# database_id = "BURAYA_CLOUDFLARE_D1_UUID_YAZIN"
+# database_id = "67be5690-37aa-43f5-9487-24715475e404"
 
 
