@@ -49,6 +49,14 @@ import {
   getSavedCustomerProfile,
   saveCustomerProfile
 } from './utils/storage';
+import {
+  initDatabaseSchema,
+  d1FetchAppointments,
+  d1CreateAppointment,
+  d1CancelAppointment,
+  d1DeleteAppointment,
+  d1SaveCustomer,
+} from './services/db';
 import { generateAppointmentId } from './utils/formatters';
 import { sendNativePushNotification } from './utils/notifications';
 
@@ -127,10 +135,23 @@ export default function App() {
     }
   }, []);
 
-  // Keep appointments state in live sync across any updates
+  // Keep appointments state in live sync across any updates & initial D1 load
   useEffect(() => {
+    // Initial fetch from persistent Cloudflare D1
+    d1FetchAppointments().then((apts) => {
+      if (apts && apts.length > 0) {
+        setAppointments(apts.filter((a) => a.status !== 'cancelled' && a.status !== 'completed'));
+      }
+    });
+
     const handleSync = () => {
-      setAppointments(getActiveAppointments());
+      d1FetchAppointments().then((apts) => {
+        if (apts && apts.length > 0) {
+          setAppointments(apts.filter((a) => a.status !== 'cancelled' && a.status !== 'completed'));
+        } else {
+          setAppointments(getActiveAppointments());
+        }
+      });
     };
     window.addEventListener('esse_data_updated', handleSync);
     window.addEventListener('storage', handleSync);
@@ -280,6 +301,7 @@ export default function App() {
     // If rescheduling an existing appointment, delete the old appointment so duplicates never occur
     if (reschedulingAppointmentId) {
       deleteStoredAppointment(reschedulingAppointmentId);
+      d1DeleteAppointment(reschedulingAppointmentId).catch(() => {});
       setReschedulingAppointmentId(null);
     }
 
@@ -296,7 +318,13 @@ export default function App() {
     };
 
     setActiveAppointment(newAppointment);
+    // Persist to Cloudflare D1 persistent SQL database and local mirror
     saveAppointmentToStorage(newAppointment);
+    d1CreateAppointment(newAppointment, reschedulingAppointmentId || undefined).catch((err) => {
+      console.warn('D1 appointment creation notice:', err);
+    });
+    d1SaveCustomer(customerData).catch(() => {});
+
     setAppointments(getActiveAppointments());
     setCurrentStep(4);
     scrollToBooking();
@@ -310,6 +338,7 @@ export default function App() {
 
   const handleCancelAppointment = (aptToCancel: AppointmentData) => {
     cancelAppointment(aptToCancel.id, 'customer', 'Müşteri randevusunu iptal etti');
+    d1CancelAppointment(aptToCancel.id, 'customer', 'Müşteri randevusunu iptal etti').catch(() => {});
     setAppointments(getActiveAppointments());
     if (activeAppointment?.id === aptToCancel.id) {
       setActiveAppointment(null);
@@ -350,6 +379,7 @@ export default function App() {
 
   const handleDeleteAppointment = (id: string) => {
     deleteStoredAppointment(id);
+    d1DeleteAppointment(id).catch(() => {});
     setAppointments(getStoredAppointments());
     if (activeAppointment?.id === id) {
       setActiveAppointment(null);

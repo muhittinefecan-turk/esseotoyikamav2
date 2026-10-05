@@ -39,6 +39,18 @@ CREATE TABLE IF NOT EXISTS loyalty_profiles (
   last_updated TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS customers (
+  plate_number TEXT PRIMARY KEY,
+  full_name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  email TEXT,
+  car_model TEXT,
+  last_visit TEXT,
+  total_visits INTEGER DEFAULT 1,
+  notes TEXT,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS system_notifications (
   id TEXT PRIMARY KEY,
   timestamp TEXT NOT NULL,

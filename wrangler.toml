@@ -2,13 +2,17 @@ name = "esseotoyikamav2"
 main = "public/_worker.js"
 compatibility_date = "2024-09-23"
 
-# Cloudflare D1 Database binding
-# Oluşturmak için: npx wrangler d1 create esse-db
-# Şemayı yüklemek için: npx wrangler d1 execute esse-db --file=./schema.sql
-[[d1_databases]]
-binding = "DB"
-database_name = "esse-db"
-database_id = "esse-auto-provision-d1"
+# Cloudflare D1 SQL Veritabanı Entegrasyonu:
+# 1. Cloudflare hesabınızda D1 veritabanını oluşturmak için terminalde çalıştırın:
+#    npx wrangler d1 create esse-db
+# 2. Komut çıktısındaki "database_id" UUID değerini (örn: b46e91cb-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+#    aşağıdaki satırlara ekleyip başlarındaki '#' karakterlerini kaldırın:
+#
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "esse-db"
+# database_id = "BURAYA_CLOUDFLARE_D1_UUID_YAZIN"
 
 [site]
 bucket = "./dist"
+

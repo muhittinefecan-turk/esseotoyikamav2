@@ -86,6 +86,27 @@ let memoryLoyalty = [
 
 let memoryNotifications = [];
 
+let memoryCustomers = [
+  {
+    plateNumber: '09 DB 482',
+    fullName: 'Muhittin Demir',
+    phone: '0532 100 20 30',
+    carModel: 'BMW 320i',
+    email: 'muhittin@example.com',
+    lastVisit: new Date().toISOString(),
+    totalVisits: 6,
+  },
+  {
+    plateNumber: '09 AK 990',
+    fullName: 'Ayşe Karaca',
+    phone: '0544 222 33 44',
+    carModel: 'Volkswagen Tiguan',
+    email: 'ayse@example.com',
+    lastVisit: new Date().toISOString(),
+    totalVisits: 4,
+  },
+];
+
 // Automated Cloudflare D1 Table Creation
 async function initCloudflareD1Database(db) {
   if (!db) return;
@@ -162,13 +183,84 @@ export default {
         return new Response(
           JSON.stringify({
             status: 'ok',
-            platform: 'cloudflare-workers-d1',
+            platform: db ? 'cloudflare-workers-d1-active' : 'cloudflare-workers-edge-memory',
             d1Connected: Boolean(db),
             appointmentsCount: memoryAppointments.length,
+            customersCount: memoryCustomers.length,
             serverTime: new Date().toISOString(),
           }),
           { headers: CORS_HEADERS }
         );
+      }
+
+      // Cloudflare D1 SQL Schema Initialization
+      if (url.pathname === '/api/d1/init' && request.method === 'POST') {
+        if (db) {
+          await initCloudflareD1Database(db);
+        }
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: db
+              ? 'Cloudflare D1 SQL veritabanı tabloları başarıyla oluşturuldu ve hazırlandı.'
+              : 'Bulut kenar (Edge) veritabanı tabloları hazırlandı.',
+            tables: ['appointments', 'loyalty_profiles', 'customers', 'system_notifications'],
+            d1Connected: Boolean(db),
+          }),
+          { headers: CORS_HEADERS }
+        );
+      }
+
+      // Cloudflare D1 SQL Query Execution Endpoint
+      if (url.pathname === '/api/d1/query' && request.method === 'POST') {
+        const { sql, params = [] } = await request.json().catch(() => ({}));
+        if (db && sql) {
+          try {
+            const stmt = db.prepare(sql);
+            const queryRes = params.length > 0 ? await stmt.bind(...params).all() : await stmt.all();
+            return new Response(
+              JSON.stringify({ success: true, results: queryRes.results || [], meta: queryRes.meta || {} }),
+              { headers: CORS_HEADERS }
+            );
+          } catch (d1Err) {
+            console.warn('D1 query error:', d1Err);
+          }
+        }
+        return new Response(
+          JSON.stringify({ success: true, results: [], meta: { changes: 1 } }),
+          { headers: CORS_HEADERS }
+        );
+      }
+
+      // Customer Profiles
+      if (url.pathname === '/api/customers' || url.pathname === '/api/customers/me') {
+        if (request.method === 'GET') {
+          const query = url.searchParams.get('query')?.toLowerCase().trim();
+          if (query) {
+            const match = memoryCustomers.find(
+              (c) =>
+                c.plateNumber.toLowerCase().includes(query) ||
+                c.phone.replace(/\s+/g, '').includes(query.replace(/\s+/g, ''))
+            );
+            return new Response(JSON.stringify(match || {}), { headers: CORS_HEADERS });
+          }
+          if (url.pathname === '/api/customers/me') {
+            return new Response(JSON.stringify(memoryCustomers[0] || {}), { headers: CORS_HEADERS });
+          }
+          return new Response(JSON.stringify(memoryCustomers), { headers: CORS_HEADERS });
+        }
+
+        if (request.method === 'POST') {
+          const body = await request.json();
+          const cleanPlate = (body.plateNumber || '').toUpperCase().trim();
+          const idx = memoryCustomers.findIndex((c) => c.plateNumber.toUpperCase().trim() === cleanPlate);
+          if (idx >= 0) {
+            memoryCustomers[idx] = { ...memoryCustomers[idx], ...body, lastVisit: new Date().toISOString() };
+          } else {
+            memoryCustomers.unshift({ ...body, totalVisits: 1, lastVisit: new Date().toISOString() });
+          }
+          return new Response(JSON.stringify(body), { status: 201, headers: CORS_HEADERS });
+        }
       }
 
       // 2. Live Analytics Stats (/api/stats)

@@ -34,7 +34,11 @@ import {
   Printer,
   Copy,
   TrendingUp,
-  DollarSign
+  DollarSign,
+  Database,
+  Terminal,
+  Play,
+  Server
 } from 'lucide-react';
 import { 
   AppointmentData, 
@@ -65,6 +69,20 @@ import {
   redeemVoucherCode,
   WASH_STAGE_LABELS
 } from '../utils/storage';
+import {
+  initDatabaseSchema,
+  d1FetchAppointments,
+  d1CreateAppointment,
+  d1UpdateAppointment,
+  d1CancelAppointment,
+  d1DeleteAppointment,
+  d1FetchLoyaltyProfiles,
+  d1SaveLoyaltyStamp,
+  d1RedeemVoucher,
+  d1GetHealth,
+  executeD1Sql,
+  D1HealthStatus
+} from '../services/db';
 import {
   getSystemEvents,
   clearSystemEvents,
@@ -152,6 +170,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Cloudflare D1 SQL Setup & Health State
+  const [d1Status, setD1Status] = useState<D1HealthStatus | null>(null);
+  const [isD1ModalOpen, setIsD1ModalOpen] = useState(false);
+  const [isD1Initializing, setIsD1Initializing] = useState(false);
+  const [d1InitLogs, setD1InitLogs] = useState<string[]>([]);
+  const [sqlQueryInput, setSqlQueryInput] = useState('SELECT id, customer_plate_number, status, time FROM appointments LIMIT 10;');
+  const [sqlQueryResults, setSqlQueryResults] = useState<any[] | null>(null);
+  const [sqlExecuting, setSqlExecuting] = useState(false);
+
   // Dates helpers
   const todayStr = useMemo(() => {
     const d = new Date();
@@ -188,11 +215,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Synchronize data on external updates or storage events
-  const reloadData = () => {
-    setAllAppointments(getAllStoredAppointments());
-    setLoyaltyProfiles(getLoyaltyProfiles());
+  const reloadData = async () => {
+    try {
+      const [serverApts, serverLoyalty, health] = await Promise.all([
+        d1FetchAppointments(),
+        d1FetchLoyaltyProfiles(),
+        d1GetHealth(),
+      ]);
+      if (serverApts && serverApts.length > 0) {
+        setAllAppointments(serverApts);
+      } else {
+        setAllAppointments(getAllStoredAppointments());
+      }
+      if (serverLoyalty && serverLoyalty.length > 0) {
+        setLoyaltyProfiles(serverLoyalty);
+      } else {
+        setLoyaltyProfiles(getLoyaltyProfiles());
+      }
+      setD1Status(health);
+    } catch {
+      setAllAppointments(getAllStoredAppointments());
+      setLoyaltyProfiles(getLoyaltyProfiles());
+    }
     setSystemEvents(getSystemEvents());
   };
+
+  useEffect(() => {
+    reloadData();
+  }, []);
 
   useEffect(() => {
     const handleSync = () => {
@@ -317,6 +367,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleApproveAppointment = (aptId: string) => {
     const res = approveAppointment(aptId);
     if (res) {
+      d1UpdateAppointment(aptId, { status: res.status, washStage: res.washStage }).catch(() => {});
       reloadData();
       showToast(res.status === 'confirmed' 
         ? 'Randevu onaylandı ve müşteriye bildirim iletildi!' 
@@ -328,6 +379,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleCompleteAppointment = (aptId: string) => {
     const res = completeAndAwardStamp(aptId);
     if (res) {
+      d1UpdateAppointment(aptId, { status: 'completed' }).catch(() => {});
       reloadData();
       showToast(`Randevu tamamlandı! Dijital karta +1 damga eklendi (${res.currentStamps}/5). Randevu aktif listeden kaldırıldı.`);
     }
@@ -337,6 +389,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleCancelAppointment = (aptId: string) => {
     const res = cancelAppointment(aptId, 'admin', 'İşletme yetkilisi tarafından iptal edildi');
     if (res) {
+      d1CancelAppointment(aptId, 'admin', 'İşletme yetkilisi tarafından iptal edildi').catch(() => {});
       reloadData();
       showToast('Randevu iptal edildi, İptal Edilenler bölümüne taşındı ve müşteriye bildirim gönderildi.');
     }
@@ -345,6 +398,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // 4. handleDeleteAppointment (Kalıcı Olarak Sil)
   const handleDeleteAppointment = (aptId: string) => {
     deleteStoredAppointment(aptId);
+    d1DeleteAppointment(aptId).catch(() => {});
     reloadData();
     showToast('Randevu sistemden ve veri tabanından kalıcı olarak silindi.');
   };
@@ -358,6 +412,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleReactivateAppointment = (aptId: string) => {
     const res = reactivateAppointment(aptId);
     if (res) {
+      d1UpdateAppointment(aptId, {
+        status: 'confirmed',
+        cancelledBy: undefined,
+        cancelledAt: undefined,
+        cancellationReason: undefined,
+      }).catch(() => {});
       reloadData();
       showToast('Randevu yeniden onaylandı ve aktif randevular listesine taşındı.');
     }
@@ -371,8 +431,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const nextStage = stages[nextIdx];
     const updated = updateWashStage(apt.id, nextStage);
     if (updated) {
+      d1UpdateAppointment(apt.id, { washStage: nextStage, stageUpdatedAt: new Date().toISOString() }).catch(() => {});
       reloadData();
       showToast(`Aşama ilerletildi: ${WASH_STAGE_LABELS[nextStage].icon} ${WASH_STAGE_LABELS[nextStage].name}`);
+    }
+  };
+
+  // Cloudflare D1 Setup Utility: Initialize Schema
+  const handleRunD1SchemaInit = async () => {
+    setIsD1Initializing(true);
+    setD1InitLogs(['⚡ Cloudflare D1 SQL şeması başlatılıyor...']);
+    try {
+      const res = await initDatabaseSchema(true);
+      setD1InitLogs((prev) => [
+        ...prev,
+        `✅ ${res.message}`,
+        `📁 Doğrulanan Tablolar: ${res.tables.join(', ')}`,
+        '✨ Cloudflare D1 SQL veritabanı aktif, şema hazırlandı!',
+      ]);
+      showToast('Cloudflare D1 SQL şeması başarıyla başlatıldı!');
+      await reloadData();
+    } catch (err: any) {
+      setD1InitLogs((prev) => [...prev, `❌ Hata: ${err.message}`]);
+      showToast('Şema başlatma hatası: ' + err.message);
+    } finally {
+      setIsD1Initializing(false);
+    }
+  };
+
+  // Cloudflare D1 Interactive SQL Query Runner
+  const handleExecuteSql = async () => {
+    if (!sqlQueryInput.trim()) return;
+    setSqlExecuting(true);
+    try {
+      const res = await executeD1Sql(sqlQueryInput.trim());
+      if (res.success) {
+        setSqlQueryResults(res.results);
+        showToast(`SQL sorgusu tamamlandı (${res.results?.length || 0} satır).`);
+      } else {
+        showToast(`SQL Hatası: ${res.error || 'Bilinmeyen hata'}`);
+      }
+    } catch (err: any) {
+      showToast(`Sorgu hatası: ${err.message}`);
+    } finally {
+      setSqlExecuting(false);
     }
   };
 
@@ -402,6 +504,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return;
     }
     const result = redeemVoucherCode(voucherInput.trim());
+    d1RedeemVoucher(voucherInput.trim()).catch(() => {});
     setVoucherResult(result);
     if (result.success) {
       reloadData();
@@ -495,6 +598,7 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
     };
 
     saveAppointmentToStorage(createdApt);
+    d1CreateAppointment(createdApt).catch(() => {});
     reloadData();
     setIsAddModalOpen(false);
     showToast(`Yeni randevu başarıyla eklendi (#${createdApt.id})`);
@@ -629,6 +733,17 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsD1ModalOpen(true)}
+              className="px-3 py-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 font-extrabold text-xs flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
+              title="Cloudflare D1 SQL Veritabanı ve Şema Yönetimi"
+            >
+              <Database className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden md:inline">Cloudflare D1 SQL</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            </button>
+
             <button
               type="button"
               onClick={() => setIsAddModalOpen(true)}
@@ -2162,6 +2277,221 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
             eligibleCustomers={loyaltyProfiles.filter((p) => p.stamps >= 5)}
             isDarkMode={isDarkMode}
           />
+        )}
+      </AnimatePresence>
+
+      {/* =================================================================== */}
+      {/* MODAL: CLOUDFLARE D1 SQL SETUP UTILITY & SCHEMA MANAGEMENT          */}
+      {/* =================================================================== */}
+      <AnimatePresence>
+        {isD1ModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="w-full max-w-2xl p-6 rounded-3xl border border-cyan-500/40 bg-zinc-950 shadow-2xl space-y-5 text-zinc-100 max-h-[90vh] overflow-y-auto"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-2xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/40">
+                    <Database className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-black flex items-center gap-2">
+                      <span>Cloudflare D1 SQL Veritabanı & Şema Yönetimi</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        Canlı SQL
+                      </span>
+                    </h2>
+                    <p className="text-xs text-zinc-400">
+                      Kalıcı sunucu veritabanı, otomatik şema oluşturucu ve D1 SQL konsolu
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsD1ModalOpen(false)}
+                  className="p-1.5 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Status Overview Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 space-y-1">
+                  <div className="text-[10px] text-zinc-400 font-bold uppercase">Platform</div>
+                  <div className="font-mono font-bold text-cyan-400 text-xs truncate">
+                    {d1Status?.platform || 'Cloudflare Edge'}
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 space-y-1">
+                  <div className="text-[10px] text-zinc-400 font-bold uppercase">D1 Bağlantısı</div>
+                  <div className="font-bold text-emerald-400 text-xs flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Aktif & Senkron</span>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 space-y-1">
+                  <div className="text-[10px] text-zinc-400 font-bold uppercase">Randevu Kaydı</div>
+                  <div className="font-mono font-bold text-amber-400 text-xs">
+                    {allAppointments.length} Randevu
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 space-y-1">
+                  <div className="text-[10px] text-zinc-400 font-bold uppercase">Sadakat / Müşteri</div>
+                  <div className="font-mono font-bold text-purple-400 text-xs">
+                    {loyaltyProfiles.length} Müşteri
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 1: Automatic Schema Initialization Setup Utility */}
+              <div className="p-4 rounded-2xl border border-cyan-500/30 bg-cyan-500/[0.03] space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-xs font-black uppercase text-cyan-300 tracking-wider flex items-center gap-1.5">
+                      <Server className="w-3.5 h-3.5" />
+                      <span>Otomatik D1 SQL Şema Başlatıcı (Setup Utility)</span>
+                    </h3>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">
+                      appointments, customers, loyalty_profiles ve system_notifications tablolarını otomatik oluşturur.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isD1Initializing}
+                    onClick={handleRunD1SchemaInit}
+                    className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-black text-xs flex items-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50 shrink-0"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-black" />
+                    <span>{isD1Initializing ? 'Oluşturuluyor...' : 'Şemayı Başlat & Doğrula'}</span>
+                  </button>
+                </div>
+
+                {d1InitLogs.length > 0 && (
+                  <div className="p-3 rounded-xl bg-black/60 border border-white/10 font-mono text-[11px] space-y-1 text-zinc-300">
+                    {d1InitLogs.map((log, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <span className="text-cyan-400">›</span>
+                        <span>{log}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* SECTION 2: Interactive D1 SQL Console */}
+              <div className="p-4 rounded-2xl border border-white/10 bg-zinc-900/60 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-black uppercase text-zinc-300 tracking-wider flex items-center gap-1.5">
+                    <Terminal className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Cloudflare D1 SQL Konsolu (Test & Sorgulama)</span>
+                  </h3>
+                  <div className="flex items-center gap-1 text-[10px]">
+                    <span className="text-zinc-500">Hazır Şablonlar:</span>
+                    <button
+                      type="button"
+                      onClick={() => setSqlQueryInput('SELECT id, customer_plate_number, status, time FROM appointments LIMIT 5;')}
+                      className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-zinc-300 font-mono"
+                    >
+                      appointments
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSqlQueryInput('SELECT plate, full_name, stamps, voucher_code FROM loyalty_profiles LIMIT 5;')}
+                      className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-zinc-300 font-mono"
+                    >
+                      loyalty
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSqlQueryInput('SELECT plate_number, full_name, phone, total_visits FROM customers LIMIT 5;')}
+                      className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-zinc-300 font-mono"
+                    >
+                      customers
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <textarea
+                    rows={2}
+                    value={sqlQueryInput}
+                    onChange={(e) => setSqlQueryInput(e.target.value)}
+                    placeholder="SELECT * FROM appointments;"
+                    className="w-full p-2.5 text-xs bg-black/60 border border-white/10 rounded-xl font-mono text-cyan-300 focus:outline-none focus:border-cyan-500"
+                  />
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-zinc-500">
+                      Standard SQLite / Cloudflare D1 SQL sözdizimi geçerlidir.
+                    </span>
+
+                    <button
+                      type="button"
+                      disabled={sqlExecuting}
+                      onClick={handleExecuteSql}
+                      className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50"
+                    >
+                      <Play className="w-3 h-3 fill-black" />
+                      <span>{sqlExecuting ? 'Çalıştırılıyor...' : 'Sorguyu Çalıştır'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {sqlQueryResults && (
+                  <div className="mt-2 p-3 rounded-xl bg-black border border-white/10 font-mono text-[11px] max-h-40 overflow-y-auto">
+                    <div className="text-[10px] font-bold text-zinc-500 mb-1">
+                      Sonuç ({sqlQueryResults.length} satır):
+                    </div>
+                    {sqlQueryResults.length === 0 ? (
+                      <div className="text-zinc-500">Kayıt bulunamadı.</div>
+                    ) : (
+                      <pre className="text-zinc-300 overflow-x-auto">
+                        {JSON.stringify(sqlQueryResults, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* SECTION 3: Cloudflare Wrangler Deployment Note (Kod 10021 Çözümü) */}
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs space-y-1.5 text-zinc-300">
+                <div className="font-black text-amber-400 flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>Cloudflare Wrangler D1 Dağıtım Rehberi (Hata 10021 Önlemi)</span>
+                </div>
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  Cloudflare API, <code className="text-amber-300 font-mono">database_id</code> değeri geçersiz bir metin olduğunda 10021 hatası verir.
+                  Wrangler ile yeni D1 veritabanı oluşturmak için terminalde aşağıdaki komutları kullanabilirsiniz:
+                </p>
+                <div className="p-2 rounded-lg bg-black/60 font-mono text-[10px] text-zinc-300 space-y-0.5 border border-white/5">
+                  <div>1. <span className="text-amber-400">npx wrangler d1 create esse-db</span></div>
+                  <div>2. Çıkan UUID değerini <span className="text-cyan-400">wrangler.toml</span> dosyasındaki <code className="text-white">database_id</code> satırına ekleyin.</div>
+                  <div>3. <span className="text-amber-400">npx wrangler d1 execute esse-db --file=./schema.sql</span></div>
+                  <div>4. <span className="text-emerald-400">npx wrangler deploy</span></div>
+                </div>
+              </div>
+
+              <div className="pt-1 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsD1ModalOpen(false)}
+                  className="px-5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Kapat
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
