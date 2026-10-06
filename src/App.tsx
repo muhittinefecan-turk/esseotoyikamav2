@@ -344,11 +344,14 @@ export default function App() {
     const updatedList = await fetchActiveAppointmentsSQL();
     setAppointments(updatedList);
     if (activeAppointment?.id === aptToCancel.id) {
-      setActiveAppointment(null);
+      setActiveAppointment({
+        ...aptToCancel,
+        status: 'cancelled',
+        cancelledBy: 'customer',
+        cancelledAt: new Date().toISOString(),
+        cancellationReason: 'Müşteri randevusunu iptal etti',
+      });
     }
-    // Return to step 2 so user can re-book on that same time or pick another
-    setCurrentStep(2);
-    scrollToBooking();
   };
 
   const handleRebook = (pastApt: AppointmentData) => {

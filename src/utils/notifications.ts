@@ -1,6 +1,9 @@
 import { SystemNotificationEvent } from '../types';
+import { fetchNotificationsSQL, insertNotificationSQL, clearNotificationsSQL } from '../services/db';
 
-const NOTIFICATION_EVENTS_KEY = 'esse_system_events_v2';
+// In-memory runtime event cache loaded and backed by Cloudflare D1
+let runtimeSystemEvents: SystemNotificationEvent[] = [];
+let hasLoadedFromD1 = false;
 
 // Play high-fidelity audible chime using Web Audio API
 export function playNotificationChime() {
@@ -41,7 +44,6 @@ export async function requestNativeNotificationPermission(): Promise<'granted' |
   }
 
   try {
-    // Ensure service worker is registered for background notification handling
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
@@ -69,7 +71,6 @@ export async function sendNativePushNotification(title: string, body: string, ta
   if ('Notification' in window && Notification.permission === 'granted') {
     let shownViaSw = false;
 
-    // 1. Prefer Service Worker Registration showNotification (supported on Android PWA and background tabs)
     if ('serviceWorker' in navigator) {
       try {
         const reg = await navigator.serviceWorker.ready;
@@ -88,7 +89,6 @@ export async function sendNativePushNotification(title: string, body: string, ta
       }
     }
 
-    // 2. Fallback to standard window Notification constructor
     if (!shownViaSw) {
       try {
         new Notification(title, {
@@ -103,15 +103,36 @@ export async function sendNativePushNotification(title: string, body: string, ta
   }
 }
 
-export function getSystemEvents(): SystemNotificationEvent[] {
+/**
+ * Loads notification events from Cloudflare D1 storage into memory.
+ */
+export async function syncSystemEventsFromD1(): Promise<SystemNotificationEvent[]> {
   try {
-    const raw = localStorage.getItem(NOTIFICATION_EVENTS_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
+    const list = await fetchNotificationsSQL();
+    runtimeSystemEvents = list;
+    hasLoadedFromD1 = true;
+    return runtimeSystemEvents;
+  } catch (e) {
+    console.warn('Failed to load system notifications from D1:', e);
+    return runtimeSystemEvents;
   }
 }
 
+/**
+ * Returns current system events from in-memory D1 state (zero localStorage).
+ */
+export function getSystemEvents(): SystemNotificationEvent[] {
+  if (!hasLoadedFromD1 && typeof window !== 'undefined') {
+    // Asynchronously kick off initial D1 sync
+    syncSystemEventsFromD1().catch(() => {});
+  }
+  return runtimeSystemEvents;
+}
+
+/**
+ * Logs a system notification directly to Cloudflare D1 table system_notifications.
+ * Zero localStorage persistence.
+ */
 export function logSystemEvent(event: Omit<SystemNotificationEvent, 'id' | 'timestamp'>): SystemNotificationEvent {
   const newEvent: SystemNotificationEvent = {
     id: `ev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -119,13 +140,15 @@ export function logSystemEvent(event: Omit<SystemNotificationEvent, 'id' | 'time
     ...event,
   };
 
-  try {
-    const current = getSystemEvents();
-    const updated = [newEvent, ...current].slice(0, 80);
-    localStorage.setItem(NOTIFICATION_EVENTS_KEY, JSON.stringify(updated));
+  runtimeSystemEvents = [newEvent, ...runtimeSystemEvents].slice(0, 80);
+
+  // Persist directly to Cloudflare D1
+  insertNotificationSQL(newEvent).catch((err) => {
+    console.warn('Failed to insert notification into D1:', err);
+  });
+
+  if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('esse_notification_event', { detail: newEvent }));
-  } catch (e) {
-    console.error('Failed to log system notification event', e);
   }
 
   // Also trigger native push notification
@@ -134,11 +157,17 @@ export function logSystemEvent(event: Omit<SystemNotificationEvent, 'id' | 'time
   return newEvent;
 }
 
+/**
+ * Clears all system notification events in Cloudflare D1.
+ * Zero localStorage.
+ */
 export function clearSystemEvents(): void {
-  try {
-    localStorage.removeItem(NOTIFICATION_EVENTS_KEY);
+  runtimeSystemEvents = [];
+  clearNotificationsSQL().catch((err) => {
+    console.warn('Failed to clear notifications in D1:', err);
+  });
+
+  if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('esse_notification_event', { detail: null }));
-  } catch (e) {
-    console.error('Failed to clear events', e);
   }
 }

@@ -82,7 +82,7 @@ export function calculateLiveAnalytics(
     totalMinutes += apt.totalDurationMinutes || 45;
     durationCount++;
   }
-  const averageWashMinutes = durationCount > 0 ? Math.round(totalMinutes / durationCount) : 45;
+  const averageWashMinutes = durationCount > 0 ? Math.round(totalMinutes / durationCount) : 0;
 
   // 4. Loyalty gift eligible count (5/5 stamps)
   const loyaltyGiftEligibleCount = loyaltyProfiles.filter(
@@ -105,7 +105,7 @@ export function calculateLiveAnalytics(
     }
   }
 
-  // If no services booked yet, provide standard base breakdown
+  // If no services booked yet, return empty list (zero mock data)
   const popularServices: Array<{ name: string; count: number; share: string; sharePercent: number }> = [];
 
   if (totalServiceCount > 0) {
@@ -119,13 +119,6 @@ export function calculateLiveAnalytics(
         sharePercent,
       });
     }
-  } else {
-    popularServices.push(
-      { name: 'Cilalı İç-Dış Yıkama', count: 0, share: '0%', sharePercent: 0 },
-      { name: 'VIP Köpüklü Yıkama + Sıvı Cila', count: 0, share: '0%', sharePercent: 0 },
-      { name: 'Detaylı İç Kuaför & Ozon', count: 0, share: '0%', sharePercent: 0 },
-      { name: 'Pasta Cila & Seramik', count: 0, share: '0%', sharePercent: 0 }
-    );
   }
 
   // 6. 4 Peron Günlük Doluluk Oranı (Live calculation based on peron assignments)

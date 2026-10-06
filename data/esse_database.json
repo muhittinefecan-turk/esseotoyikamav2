@@ -1,6 +1,6 @@
 {
   "version": "2.0.0-cloudflare-sql",
-  "lastUpdated": "2026-10-05T10:02:44.616Z",
+  "lastUpdated": "2026-10-06T07:34:32.718Z",
   "config": {
     "name": "Esse Oto Yıkama & Detailing",
     "phone": "0555 555 55 55",
@@ -8,143 +8,8 @@
     "workingHours": "08:30 - 18:30 (Pazartesi - Cumartesi)",
     "peronCount": 4
   },
-  "appointments": [
-    {
-      "id": "ESSE-1092",
-      "createdAt": "2026-10-04T15:04:24.281Z",
-      "vehicleType": "sedan",
-      "selectedServices": [
-        {
-          "id": "wash_standard",
-          "name": "Cilalı İç-Dış Yıkama",
-          "category": "wash",
-          "description": "Ph nötr aktif kar köpüğü, çiziksiz çift kova süngerleme, jant balata tozu arındırma, detaylı iç vakumlama.",
-          "durationMinutes": 45
-        }
-      ],
-      "date": "2026-10-04",
-      "time": "10:30 - 11:30 (1. Peron)",
-      "totalDurationMinutes": 45,
-      "customer": {
-        "fullName": "Muhittin Demir",
-        "phone": "0532 100 20 30",
-        "plateNumber": "09 DB 482",
-        "carModel": "BMW 320i",
-        "notes": "Deri koltuklara özel besleyici süt uygulansın."
-      },
-      "status": "in_progress",
-      "washStage": "foam_prewash",
-      "stageUpdatedAt": "2026-10-04T15:04:24.281Z",
-      "photos": [
-        {
-          "id": "sample-p1",
-          "type": "before",
-          "url": "https://images.unsplash.com/photo-1520340356584-f9917d1eea6f?auto=format&fit=crop&w=800&q=80",
-          "label": "Ön Kabul Çizik Kontrolü",
-          "takenAt": "2026-10-04T15:04:24.281Z"
-        }
-      ]
-    },
-    {
-      "id": "ESSE-1093",
-      "createdAt": "2026-10-04T14:04:24.281Z",
-      "vehicleType": "suv",
-      "selectedServices": [
-        {
-          "id": "wash_vip",
-          "name": "VIP Köpüklü Yıkama + Sıvı Nano Cila",
-          "category": "wash",
-          "description": "Özel çift kova yöntemi, hidrofobik ıslak cila ile ekstra parlaklık.",
-          "durationMinutes": 60
-        }
-      ],
-      "date": "2026-10-04",
-      "time": "11:30 - 12:30 (2. Peron)",
-      "totalDurationMinutes": 60,
-      "customer": {
-        "fullName": "Ayşe Karaca",
-        "phone": "0544 222 33 44",
-        "plateNumber": "09 AK 990",
-        "carModel": "Volkswagen Tiguan",
-        "notes": "Bagajda evcil hayvan tüyü temizliği yapılsın."
-      },
-      "status": "cancelled",
-      "washStage": "queue",
-      "cancelledBy": "admin",
-      "cancelledAt": "2026-10-04T15:07:46.489Z",
-      "cancellationReason": "Test iptal"
-    }
-  ],
-  "loyaltyProfiles": [
-    {
-      "plate": "09 DB 482",
-      "fullName": "Muhittin Demir",
-      "phone": "0532 100 20 30",
-      "stamps": 5,
-      "voucherCode": "VIP-ESSE-4820",
-      "history": [
-        {
-          "id": "h1",
-          "date": "2026-10-04",
-          "serviceName": "Cilalı İç-Dış Yıkama",
-          "earnedStamp": 1
-        },
-        {
-          "id": "h2",
-          "date": "2026-09-28",
-          "serviceName": "VIP Nano Cila",
-          "earnedStamp": 1
-        },
-        {
-          "id": "h3",
-          "date": "2026-09-15",
-          "serviceName": "Detaylı İç Kuaför",
-          "earnedStamp": 1
-        },
-        {
-          "id": "h4",
-          "date": "2026-09-02",
-          "serviceName": "Cilalı Yıkama",
-          "earnedStamp": 1
-        },
-        {
-          "id": "h5",
-          "date": "2026-08-20",
-          "serviceName": "Standart Yıkama",
-          "earnedStamp": 1
-        }
-      ],
-      "lastUpdated": "2026-10-04T15:04:24.281Z"
-    },
-    {
-      "plate": "09 AK 990",
-      "fullName": "Ayşe Karaca",
-      "phone": "0544 222 33 44",
-      "stamps": 3,
-      "history": [],
-      "lastUpdated": "2026-10-04T15:04:24.281Z"
-    }
-  ],
-  "notifications": [
-    {
-      "id": "notif-1",
-      "timestamp": "2026-10-04T15:04:24.281Z",
-      "type": "in_progress",
-      "title": "🫧 Köpük & Ön Yıkama Başladı",
-      "message": "Sn. Muhittin Demir, 09 DB 482 aracınız köpüklendi ve ön yıkamaya alındı.",
-      "appointmentId": "ESSE-1092",
-      "plate": "09 DB 482",
-      "customerName": "Muhittin Demir"
-    }
-  ],
-  "customers": [
-    {
-      "plateNumber": "09 DB 482",
-      "fullName": "Muhittin Demir",
-      "phone": "0532 100 20 30",
-      "totalVisits": 1,
-      "lastVisit": "2026-10-05T10:02:44.616Z",
-      "createdAt": "2026-10-05T10:02:44.616Z"
-    }
-  ]
+  "customers": [],
+  "appointments": [],
+  "loyaltyProfiles": [],
+  "notifications": []
 }

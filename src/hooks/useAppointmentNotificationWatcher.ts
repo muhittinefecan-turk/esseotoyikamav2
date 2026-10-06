@@ -36,6 +36,9 @@ function playChime() {
   }
 }
 
+// In-memory set to prevent duplicate notifications during the active session (zero localStorage)
+const sentAlertKeys = new Set<string>();
+
 export function useAppointmentNotificationWatcher() {
   const [activeAlert, setActiveAlert] = useState<ActiveInAppNotification | null>(null);
 
@@ -77,8 +80,8 @@ export function useAppointmentNotificationWatcher() {
 
       // 1-HOUR BEFORE NOTIFICATION (0 to 60 minutes)
       if (diffMinutes > 0 && diffMinutes <= 60) {
-        if (!localStorage.getItem(key1h)) {
-          localStorage.setItem(key1h, 'true');
+        if (!sentAlertKeys.has(key1h)) {
+          sentAlertKeys.add(key1h);
           const title = `🚨 Randevunuza 1 Saat Kaldı! (Esse Detailing)`;
           const message = `Sn. ${apt.customer.fullName}, ${apt.customer.plateNumber} aracınızın ${apt.time} randevusuna 1 saat kaldı. Lütfen peronunuza giriş yapmayı unutmayınız.`;
 
@@ -108,8 +111,8 @@ export function useAppointmentNotificationWatcher() {
       }
       // 4-HOURS BEFORE NOTIFICATION (61 to 240 minutes)
       else if (diffMinutes > 60 && diffMinutes <= 240) {
-        if (!localStorage.getItem(key4h)) {
-          localStorage.setItem(key4h, 'true');
+        if (!sentAlertKeys.has(key4h)) {
+          sentAlertKeys.add(key4h);
           const title = `⏳ Randevunuza 4 Saat Kaldı (Esse Detailing)`;
           const message = `Sn. ${apt.customer.fullName}, ${apt.time} randevunuz için peronumuz ve uzman ekibimiz hazırlanıyor.`;
 

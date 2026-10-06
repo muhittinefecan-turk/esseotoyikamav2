@@ -9,107 +9,16 @@ const CORS_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
 };
 
-const EMBEDDED_INDEX_HTML = "<!doctype html>\n<html lang=\"tr\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=5.0\" />\n    \n    <!-- Google tag (gtag.js) -->\n    <script async src=\"https://www.googletagmanager.com/gtag/js?id=G-HDDP232QLM\"></script>\n    <script>\n      window.dataLayer = window.dataLayer || [];\n      function gtag(){dataLayer.push(arguments);}\n      gtag('js', new Date());\n      gtag('config', 'G-HDDP232QLM');\n\n      // Purge old PWA cache if present\n      if ('caches' in window) {\n        caches.keys().then(function(keys) {\n          keys.forEach(function(k) {\n            if (k.indexOf('esse-otoyikama-v1') !== -1 || k.indexOf('esse-otoyikama-v2') !== -1) {\n              caches.delete(k);\n            }\n          });\n        });\n      }\n    </script>\n\n    <!-- Google #1 SEO Meta Tags (Targeting \"Aydın Oto Yıkama\", \"Efeler Oto Yıkama\", \"Pasta Cila Aydın\") -->\n    <title>Aydın Oto Yıkama & Detailing – Esse Oto Yıkama Efeler</title>\n    <meta name=\"description\" content=\"Aydın oto yıkama ve oto kuaför hizmetinde 2017'den beri lider: Efeler Çevre Bulvarı'nda pasta cila, seramik kaplama, detaylı koltuk yıkama ve far parlatma. Online randevunuzu hemen alın.\" />\n    <meta name=\"keywords\" content=\"Aydın oto yıkama, Efeler oto yıkama, Aydın araba yıkama, Çevre Bulvarı oto yıkama, Esse Oto Yıkama, Aydın pasta cila, Aydın seramik kaplama, Aydın koltuk yıkama, oto kuaför Aydın, Efeler oto kuaför, far temizleme Aydın, boya koruma Efeler, motor temizliği Aydın, Okan Özçal\" />\n    <meta name=\"author\" content=\"Esse Oto Yıkama - Okan Özçal\" />\n    <meta name=\"robots\" content=\"index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1\" />\n    <link rel=\"canonical\" href=\"https://esseotoyikama.com/\" />\n\n    <!-- Geo Tags for Local SEO (Aydın Efeler Çevre Bulvarı) -->\n    <meta name=\"geo.region\" content=\"TR-09\" />\n    <meta name=\"geo.placename\" content=\"Ata Mahallesi, Çevre Bulvarı, 09010 Efeler/Aydın\" />\n    <meta name=\"geo.position\" content=\"37.8444;27.8458\" />\n    <meta name=\"ICBM\" content=\"37.8444, 27.8458\" />\n\n    <!-- Open Graph (Facebook / WhatsApp / iMessage) -->\n    <meta property=\"og:type\" content=\"business.business\" />\n    <meta property=\"og:title\" content=\"Aydın Oto Yıkama & Detailing – Esse Oto Yıkama Efeler\" />\n    <meta property=\"og:description\" content=\"Aydın Efeler Çevre Bulvarı'nda 2017'den beri profesyonel pasta cila, boya koruma, seramik kaplama ve detaylı araç temizliği. Online randevunuzu hemen oluşturun.\" />\n    <meta property=\"og:locale\" content=\"tr_TR\" />\n    <meta property=\"og:site_name\" content=\"Esse Oto Yıkama\" />\n    <meta property=\"og:url\" content=\"https://esseotoyikama.com/\" />\n    <meta property=\"og:image\" content=\"/icon-512.png\" />\n\n    <!-- Twitter Cards -->\n    <meta name=\"twitter:card\" content=\"summary_large_image\" />\n    <meta name=\"twitter:title\" content=\"Aydın Oto Yıkama & Detailing – Esse Oto Yıkama Efeler\" />\n    <meta name=\"twitter:description\" content=\"Aydın Efeler'de 2017'den beri profesyonel oto kuaför ve boya koruma. Online randevunuzu kolayca alın.\" />\n    <meta name=\"twitter:image\" content=\"/icon-512.png\" />\n\n    <!-- PWA & Mobile Web App Meta -->\n    <link rel=\"manifest\" href=\"/manifest.json\" />\n    <link rel=\"apple-touch-icon\" href=\"/apple-touch-icon.png\" />\n    <link rel=\"icon\" type=\"image/png\" sizes=\"192x192\" href=\"/icon-192.png\" />\n    <meta name=\"application-name\" content=\"Esse Oto Yıkama\" />\n    <meta name=\"apple-mobile-web-app-title\" content=\"Esse Oto\" />\n    <meta name=\"apple-mobile-web-app-capable\" content=\"yes\" />\n    <meta name=\"apple-mobile-web-app-status-bar-style\" content=\"black-translucent\" />\n\n    <!-- Theme Color -->\n    <meta name=\"theme-color\" content=\"#09090b\" />\n\n    <!-- Fonts -->\n    <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n    <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n    <link href=\"https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700;800&display=swap\" rel=\"stylesheet\">\n\n    <!-- Schema.org JSON-LD LocalBusiness & AutoRepair Rich Snippet Data -->\n    <script type=\"application/ld+json\">\n    {\n      \"@context\": \"https://schema.org\",\n      \"@type\": [\"AutoRepair\", \"AutomotiveBusiness\"],\n      \"@id\": \"https://esseotoyikama.com/#business\",\n      \"name\": \"Esse Oto Yıkama & Detailing Aydın\",\n      \"alternateName\": [\"Esse Oto Yıkama\", \"Aydın Esse Detailing\", \"Okan Özçal Esse Oto\"],\n      \"image\": \"/icon-512.png\",\n      \"telephone\": \"+905529439168\",\n      \"foundingDate\": \"2017-05-01\",\n      \"priceRange\": \"$\",\n      \"currenciesAccepted\": \"TRY\",\n      \"paymentAccepted\": \"Cash, Credit Card, Contactless, FAST\",\n      \"url\": \"https://esseotoyikama.com/\",\n      \"sameAs\": [\n        \"https://www.instagram.com/okan_ozcal\",\n        \"https://www.tiktok.com/@okan.zcal\"\n      ],\n      \"address\": {\n        \"@type\": \"PostalAddress\",\n        \"streetAddress\": \"Ata Mahallesi, Çevre Bulvarı No:42\",\n        \"addressLocality\": \"Efeler\",\n        \"addressRegion\": \"Aydın\",\n        \"postalCode\": \"09010\",\n        \"addressCountry\": \"TR\"\n      },\n      \"geo\": {\n        \"@type\": \"GeoCoordinates\",\n        \"latitude\": 37.8444,\n        \"longitude\": 27.8458\n      },\n      \"areaServed\": [\n        {\n          \"@type\": \"AdministrativeArea\",\n          \"name\": \"Efeler, Aydın\"\n        },\n        {\n          \"@type\": \"AdministrativeArea\",\n          \"name\": \"Aydın Merkez\"\n        },\n        {\n          \"@type\": \"AdministrativeArea\",\n          \"name\": \"İncirliova, Aydın\"\n        }\n      ],\n      \"openingHoursSpecification\": [\n        {\n          \"@type\": \"OpeningHoursSpecification\",\n          \"dayOfWeek\": [\"Monday\", \"Tuesday\", \"Wednesday\", \"Thursday\", \"Friday\", \"Saturday\"],\n          \"opens\": \"08:30\",\n          \"closes\": \"19:30\"\n        }\n      ],\n      \"aggregateRating\": {\n        \"@type\": \"AggregateRating\",\n        \"ratingValue\": \"4.9\",\n        \"reviewCount\": \"348\",\n        \"bestRating\": \"5\",\n        \"worstRating\": \"1\"\n      },\n      \"hasOfferCatalog\": {\n        \"@type\": \"OfferCatalog\",\n        \"name\": \"Oto Yıkama ve Detailing Hizmetleri\",\n        \"itemListElement\": [\n          {\n            \"@type\": \"Offer\",\n            \"itemOffered\": {\n              \"@type\": \"Service\",\n              \"name\": \"Cilalı Detaylı Dış & İç Yıkama\",\n              \"description\": \"pH nötr köpük, çiziksiz çift kova yıkama, jant balata tozu temizliği ve detaylı iç süpürme.\"\n            }\n          },\n          {\n            \"@type\": \"Offer\",\n            \"itemOffered\": {\n              \"@type\": \"Service\",\n              \"name\": \"Pasta Cila & Çizik Giderme\",\n              \"description\": \"Hare, fırça ve kılcal çizikleri %90 gideren profesyonel boya yenileme ve derin parlaklık.\"\n            }\n          },\n          {\n            \"@type\": \"Offer\",\n            \"itemOffered\": {\n              \"@type\": \"Service\",\n              \"name\": \"9H Seramik Kaplama & Boya Koruma\",\n              \"description\": \"UV ışınlarına, güneş yanığına ve asit yağmuruna karşı 2-3 yıl süreli hidrofobik zırh.\"\n            }\n          },\n          {\n            \"@type\": \"Offer\",\n            \"itemOffered\": {\n              \"@type\": \"Service\",\n              \"name\": \"Detaylı Koltuk Yıkama & Buharlı Sterilizasyon\",\n              \"description\": \"140°C kuru buhar ve vakumlu ekstraksiyon ile su lekeleri ve bakterilerin derinlemesine temizliği.\"\n            }\n          },\n          {\n            \"@type\": \"Offer\",\n            \"itemOffered\": {\n              \"@type\": \"Service\",\n              \"name\": \"Far Camı Temizleme & Parlatma\",\n              \"description\": \"Sararmış ve matlaşmış far camlarının zımpara ve polimer buhar ile sıfır berraklığına kavuşturulması.\"\n            }\n          }\n        ]\n      }\n    }\n    </script>\n\n    <!-- Schema.org FAQPage Structured Data for Google Accordion Snippets -->\n    <script type=\"application/ld+json\">\n    {\n      \"@context\": \"https://schema.org\",\n      \"@type\": \"FAQPage\",\n      \"mainEntity\": [\n        {\n          \"@type\": \"Question\",\n          \"name\": \"Aydın Efeler'de en iyi oto yıkama nerede?\",\n          \"acceptedAnswer\": {\n            \"@type\": \"Answer\",\n            \"text\": \"Esse Oto Yıkama, Aydın Efeler Çevre Bulvarı'nda 2017'den beri pasta cila, boya koruma, seramik kaplama ve detaylı temizlik hizmetleri sunmaktadır.\"\n          }\n        },\n        {\n          \"@type\": \"Question\",\n          \"name\": \"Esse Oto Yıkama Pazar günleri açık mı?\",\n          \"acceptedAnswer\": {\n            \"@type\": \"Answer\",\n            \"text\": \"Hayır, Esse Oto Yıkama Pazar günleri kapalıdır. Pazartesi'den Cumartesi'ye 08:30 - 19:30 saatleri arasında kesintisiz hizmet vermektedir.\"\n          }\n        },\n        {\n          \"@type\": \"Question\",\n          \"name\": \"Pasta cila ve seramik kaplama ne kadar sürer?\",\n          \"acceptedAnswer\": {\n            \"@type\": \"Answer\",\n            \"text\": \"Pasta cila işlemi araç boyutuna ve boya durumuna göre ortalama 3-5 saat sürer. Seramik kaplama uygulaması için katmanların kürleşmesi amacıyla aracın 1 gün kalması tavsiye edilir.\"\n          }\n        },\n        {\n          \"@type\": \"Question\",\n          \"name\": \"Koltuk yıkandıktan sonra ıslak kalır mı?\",\n          \"acceptedAnswer\": {\n            \"@type\": \"Answer\",\n            \"text\": \"Hayır. Yüksek vakumlu ekstraksiyon makinelerimiz nemin %90'ını çeker; sıcak hava fanları ve havalandırma ile 1-2 saat içinde tamamen kupkuru teslim edilir.\"\n          }\n        }\n      ]\n    }\n    </script>\n    <script type=\"module\" crossorigin src=\"/assets/index-Bq23_0gU.js\"></script>\n    <link rel=\"stylesheet\" crossorigin href=\"/assets/index-CuDsaFNB.css\">\n  </head>\n  <body class=\"bg-zinc-950 text-zinc-100 antialiased selection:bg-amber-500 selection:text-black\">\n    <div id=\"root\"></div>\n  </body>\n</html>\n";
+const EMBEDDED_INDEX_HTML = "<!doctype html>\n<html lang=\"tr\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=5.0\" />\n    \n    <!-- Google tag (gtag.js) -->\n    <script async src=\"https://www.googletagmanager.com/gtag/js?id=G-HDDP232QLM\"></script>\n    <script>\n      window.dataLayer = window.dataLayer || [];\n      function gtag(){dataLayer.push(arguments);}\n      gtag('js', new Date());\n      gtag('config', 'G-HDDP232QLM');\n\n      // Purge old PWA cache if present\n      if ('caches' in window) {\n        caches.keys().then(function(keys) {\n          keys.forEach(function(k) {\n            if (k.indexOf('esse-otoyikama-v1') !== -1 || k.indexOf('esse-otoyikama-v2') !== -1) {\n              caches.delete(k);\n            }\n          });\n        });\n      }\n    </script>\n\n    <!-- Google #1 SEO Meta Tags (Targeting \"Aydın Oto Yıkama\", \"Efeler Oto Yıkama\", \"Pasta Cila Aydın\") -->\n    <title>Aydın Oto Yıkama & Detailing – Esse Oto Yıkama Efeler</title>\n    <meta name=\"description\" content=\"Aydın oto yıkama ve oto kuaför hizmetinde 2017'den beri lider: Efeler Çevre Bulvarı'nda pasta cila, seramik kaplama, detaylı koltuk yıkama ve far parlatma. Online randevunuzu hemen alın.\" />\n    <meta name=\"keywords\" content=\"Aydın oto yıkama, Efeler oto yıkama, Aydın araba yıkama, Çevre Bulvarı oto yıkama, Esse Oto Yıkama, Aydın pasta cila, Aydın seramik kaplama, Aydın koltuk yıkama, oto kuaför Aydın, Efeler oto kuaför, far temizleme Aydın, boya koruma Efeler, motor temizliği Aydın, Okan Özçal\" />\n    <meta name=\"author\" content=\"Esse Oto Yıkama - Okan Özçal\" />\n    <meta name=\"robots\" content=\"index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1\" />\n    <link rel=\"canonical\" href=\"https://esseotoyikama.com/\" />\n\n    <!-- Geo Tags for Local SEO (Aydın Efeler Çevre Bulvarı) -->\n    <meta name=\"geo.region\" content=\"TR-09\" />\n    <meta name=\"geo.placename\" content=\"Ata Mahallesi, Çevre Bulvarı, 09010 Efeler/Aydın\" />\n    <meta name=\"geo.position\" content=\"37.8444;27.8458\" />\n    <meta name=\"ICBM\" content=\"37.8444, 27.8458\" />\n\n    <!-- Open Graph (Facebook / WhatsApp / iMessage) -->\n    <meta property=\"og:type\" content=\"business.business\" />\n    <meta property=\"og:title\" content=\"Aydın Oto Yıkama & Detailing – Esse Oto Yıkama Efeler\" />\n    <meta property=\"og:description\" content=\"Aydın Efeler Çevre Bulvarı'nda 2017'den beri profesyonel pasta cila, boya koruma, seramik kaplama ve detaylı araç temizliği. Online randevunuzu hemen oluşturun.\" />\n    <meta property=\"og:locale\" content=\"tr_TR\" />\n    <meta property=\"og:site_name\" content=\"Esse Oto Yıkama\" />\n    <meta property=\"og:url\" content=\"https://esseotoyikama.com/\" />\n    <meta property=\"og:image\" content=\"/icon-512.png\" />\n\n    <!-- Twitter Cards -->\n    <meta name=\"twitter:card\" content=\"summary_large_image\" />\n    <meta name=\"twitter:title\" content=\"Aydın Oto Yıkama & Detailing – Esse Oto Yıkama Efeler\" />\n    <meta name=\"twitter:description\" content=\"Aydın Efeler'de 2017'den beri profesyonel oto kuaför ve boya koruma. Online randevunuzu kolayca alın.\" />\n    <meta name=\"twitter:image\" content=\"/icon-512.png\" />\n\n    <!-- PWA & Mobile Web App Meta -->\n    <link rel=\"manifest\" href=\"/manifest.json\" />\n    <link rel=\"apple-touch-icon\" href=\"/apple-touch-icon.png\" />\n    <link rel=\"icon\" type=\"image/png\" sizes=\"192x192\" href=\"/icon-192.png\" />\n    <meta name=\"application-name\" content=\"Esse Oto Yıkama\" />\n    <meta name=\"apple-mobile-web-app-title\" content=\"Esse Oto\" />\n    <meta name=\"apple-mobile-web-app-capable\" content=\"yes\" />\n    <meta name=\"apple-mobile-web-app-status-bar-style\" content=\"black-translucent\" />\n\n    <!-- Theme Color -->\n    <meta name=\"theme-color\" content=\"#09090b\" />\n\n    <!-- Fonts -->\n    <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n    <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n    <link href=\"https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700;800&display=swap\" rel=\"stylesheet\">\n\n    <!-- Schema.org JSON-LD LocalBusiness & AutoRepair Rich Snippet Data -->\n    <script type=\"application/ld+json\">\n    {\n      \"@context\": \"https://schema.org\",\n      \"@type\": [\"AutoRepair\", \"AutomotiveBusiness\"],\n      \"@id\": \"https://esseotoyikama.com/#business\",\n      \"name\": \"Esse Oto Yıkama & Detailing Aydın\",\n      \"alternateName\": [\"Esse Oto Yıkama\", \"Aydın Esse Detailing\", \"Okan Özçal Esse Oto\"],\n      \"image\": \"/icon-512.png\",\n      \"telephone\": \"+905529439168\",\n      \"foundingDate\": \"2017-05-01\",\n      \"priceRange\": \"$\",\n      \"currenciesAccepted\": \"TRY\",\n      \"paymentAccepted\": \"Cash, Credit Card, Contactless, FAST\",\n      \"url\": \"https://esseotoyikama.com/\",\n      \"sameAs\": [\n        \"https://www.instagram.com/okan_ozcal\",\n        \"https://www.tiktok.com/@okan.zcal\"\n      ],\n      \"address\": {\n        \"@type\": \"PostalAddress\",\n        \"streetAddress\": \"Ata Mahallesi, Çevre Bulvarı No:42\",\n        \"addressLocality\": \"Efeler\",\n        \"addressRegion\": \"Aydın\",\n        \"postalCode\": \"09010\",\n        \"addressCountry\": \"TR\"\n      },\n      \"geo\": {\n        \"@type\": \"GeoCoordinates\",\n        \"latitude\": 37.8444,\n        \"longitude\": 27.8458\n      },\n      \"areaServed\": [\n        {\n          \"@type\": \"AdministrativeArea\",\n          \"name\": \"Efeler, Aydın\"\n        },\n        {\n          \"@type\": \"AdministrativeArea\",\n          \"name\": \"Aydın Merkez\"\n        },\n        {\n          \"@type\": \"AdministrativeArea\",\n          \"name\": \"İncirliova, Aydın\"\n        }\n      ],\n      \"openingHoursSpecification\": [\n        {\n          \"@type\": \"OpeningHoursSpecification\",\n          \"dayOfWeek\": [\"Monday\", \"Tuesday\", \"Wednesday\", \"Thursday\", \"Friday\", \"Saturday\"],\n          \"opens\": \"08:30\",\n          \"closes\": \"19:30\"\n        }\n      ],\n      \"aggregateRating\": {\n        \"@type\": \"AggregateRating\",\n        \"ratingValue\": \"4.9\",\n        \"reviewCount\": \"348\",\n        \"bestRating\": \"5\",\n        \"worstRating\": \"1\"\n      },\n      \"hasOfferCatalog\": {\n        \"@type\": \"OfferCatalog\",\n        \"name\": \"Oto Yıkama ve Detailing Hizmetleri\",\n        \"itemListElement\": [\n          {\n            \"@type\": \"Offer\",\n            \"itemOffered\": {\n              \"@type\": \"Service\",\n              \"name\": \"Cilalı Detaylı Dış & İç Yıkama\",\n              \"description\": \"pH nötr köpük, çiziksiz çift kova yıkama, jant balata tozu temizliği ve detaylı iç süpürme.\"\n            }\n          },\n          {\n            \"@type\": \"Offer\",\n            \"itemOffered\": {\n              \"@type\": \"Service\",\n              \"name\": \"Pasta Cila & Çizik Giderme\",\n              \"description\": \"Hare, fırça ve kılcal çizikleri %90 gideren profesyonel boya yenileme ve derin parlaklık.\"\n            }\n          },\n          {\n            \"@type\": \"Offer\",\n            \"itemOffered\": {\n              \"@type\": \"Service\",\n              \"name\": \"9H Seramik Kaplama & Boya Koruma\",\n              \"description\": \"UV ışınlarına, güneş yanığına ve asit yağmuruna karşı 2-3 yıl süreli hidrofobik zırh.\"\n            }\n          },\n          {\n            \"@type\": \"Offer\",\n            \"itemOffered\": {\n              \"@type\": \"Service\",\n              \"name\": \"Detaylı Koltuk Yıkama & Buharlı Sterilizasyon\",\n              \"description\": \"140°C kuru buhar ve vakumlu ekstraksiyon ile su lekeleri ve bakterilerin derinlemesine temizliği.\"\n            }\n          },\n          {\n            \"@type\": \"Offer\",\n            \"itemOffered\": {\n              \"@type\": \"Service\",\n              \"name\": \"Far Camı Temizleme & Parlatma\",\n              \"description\": \"Sararmış ve matlaşmış far camlarının zımpara ve polimer buhar ile sıfır berraklığına kavuşturulması.\"\n            }\n          }\n        ]\n      }\n    }\n    </script>\n\n    <!-- Schema.org FAQPage Structured Data for Google Accordion Snippets -->\n    <script type=\"application/ld+json\">\n    {\n      \"@context\": \"https://schema.org\",\n      \"@type\": \"FAQPage\",\n      \"mainEntity\": [\n        {\n          \"@type\": \"Question\",\n          \"name\": \"Aydın Efeler'de en iyi oto yıkama nerede?\",\n          \"acceptedAnswer\": {\n            \"@type\": \"Answer\",\n            \"text\": \"Esse Oto Yıkama, Aydın Efeler Çevre Bulvarı'nda 2017'den beri pasta cila, boya koruma, seramik kaplama ve detaylı temizlik hizmetleri sunmaktadır.\"\n          }\n        },\n        {\n          \"@type\": \"Question\",\n          \"name\": \"Esse Oto Yıkama Pazar günleri açık mı?\",\n          \"acceptedAnswer\": {\n            \"@type\": \"Answer\",\n            \"text\": \"Hayır, Esse Oto Yıkama Pazar günleri kapalıdır. Pazartesi'den Cumartesi'ye 08:30 - 19:30 saatleri arasında kesintisiz hizmet vermektedir.\"\n          }\n        },\n        {\n          \"@type\": \"Question\",\n          \"name\": \"Pasta cila ve seramik kaplama ne kadar sürer?\",\n          \"acceptedAnswer\": {\n            \"@type\": \"Answer\",\n            \"text\": \"Pasta cila işlemi araç boyutuna ve boya durumuna göre ortalama 3-5 saat sürer. Seramik kaplama uygulaması için katmanların kürleşmesi amacıyla aracın 1 gün kalması tavsiye edilir.\"\n          }\n        },\n        {\n          \"@type\": \"Question\",\n          \"name\": \"Koltuk yıkandıktan sonra ıslak kalır mı?\",\n          \"acceptedAnswer\": {\n            \"@type\": \"Answer\",\n            \"text\": \"Hayır. Yüksek vakumlu ekstraksiyon makinelerimiz nemin %90'ını çeker; sıcak hava fanları ve havalandırma ile 1-2 saat içinde tamamen kupkuru teslim edilir.\"\n          }\n        }\n      ]\n    }\n    </script>\n    <script type=\"module\" crossorigin src=\"/assets/index-C-Drw7xF.js\"></script>\n    <link rel=\"stylesheet\" crossorigin href=\"/assets/index-CUQUWI9-.css\">\n  </head>\n  <body class=\"bg-zinc-950 text-zinc-100 antialiased selection:bg-amber-500 selection:text-black\">\n    <div id=\"root\"></div>\n  </body>\n</html>\n";
 
 // In-Memory Edge Cache Fallback (if Cloudflare D1 binding is pending)
-let memoryAppointments = [
-  {
-    id: 'ESSE-1092',
-    createdAt: new Date().toISOString(),
-    vehicleType: 'sedan',
-    selectedServices: [
-      {
-        id: 'wash_standard',
-        name: 'Cilalı İç-Dış Yıkama',
-        category: 'wash',
-        description: 'Ph nötr aktif kar köpüğü, çiziksiz çift kova süngerleme.',
-        durationMinutes: 45,
-      },
-    ],
-    date: new Date().toISOString().split('T')[0],
-    time: '10:30 - 11:30 (1. Peron)',
-    totalDurationMinutes: 45,
-    customer: {
-      fullName: 'Muhittin Demir',
-      phone: '0532 100 20 30',
-      plateNumber: '09 DB 482',
-      carModel: 'BMW 320i',
-      notes: 'Deri koltuklara özel besleyici süt uygulansın.',
-    },
-    status: 'in_progress',
-    washStage: 'foam_prewash',
-    stageUpdatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'ESSE-1093',
-    createdAt: new Date(Date.now() - 3600000).toISOString(),
-    vehicleType: 'suv',
-    selectedServices: [
-      {
-        id: 'wash_vip',
-        name: 'VIP Köpüklü Yıkama + Sıvı Nano Cila',
-        category: 'wash',
-        description: 'Özel çift kova yöntemi, hidrofobik ıslak cila ile ekstra parlaklık.',
-        durationMinutes: 60,
-      },
-    ],
-    date: new Date().toISOString().split('T')[0],
-    time: '11:30 - 12:30 (2. Peron)',
-    totalDurationMinutes: 60,
-    customer: {
-      fullName: 'Ayşe Karaca',
-      phone: '0544 222 33 44',
-      plateNumber: '09 AK 990',
-      carModel: 'Volkswagen Tiguan',
-      notes: 'Bagaj temizliği yapılsın.',
-    },
-    status: 'confirmed',
-    washStage: 'queue',
-  },
-];
-
-let memoryLoyalty = [
-  {
-    plate: '09 DB 482',
-    fullName: 'Muhittin Demir',
-    phone: '0532 100 20 30',
-    stamps: 5,
-    voucherCode: 'VIP-ESSE-4820',
-    lastUpdated: new Date().toISOString(),
-  },
-  {
-    plate: '09 AK 990',
-    fullName: 'Ayşe Karaca',
-    phone: '0544 222 33 44',
-    stamps: 3,
-    lastUpdated: new Date().toISOString(),
-  },
-];
-
+// In-memory fallback (starts 100% clean and empty; no mock or demo data)
+let memoryAppointments = [];
+let memoryLoyalty = [];
 let memoryNotifications = [];
+let memoryCustomers = [];
 
-let memoryCustomers = [
-  {
-    plateNumber: '09 DB 482',
-    fullName: 'Muhittin Demir',
-    phone: '0532 100 20 30',
-    carModel: 'BMW 320i',
-    email: 'muhittin@example.com',
-    lastVisit: new Date().toISOString(),
-    totalVisits: 6,
-  },
-  {
-    plateNumber: '09 AK 990',
-    fullName: 'Ayşe Karaca',
-    phone: '0544 222 33 44',
-    carModel: 'Volkswagen Tiguan',
-    email: 'ayse@example.com',
-    lastVisit: new Date().toISOString(),
-    totalVisits: 4,
-  },
-];
-
-// Automated Cloudflare D1 Table Creation
+// Automated Cloudflare D1 Table Creation (Zero Mock Data)
 async function initCloudflareD1Database(db) {
   if (!db) return;
   try {
@@ -127,14 +36,17 @@ async function initCloudflareD1Database(db) {
         customer_plate_number TEXT NOT NULL,
         customer_car_model TEXT,
         customer_notes TEXT,
+        customer_email TEXT,
         status TEXT DEFAULT 'confirmed',
         wash_stage TEXT DEFAULT 'queue',
         stage_updated_at TEXT,
+        admin_notes TEXT,
         cancelled_by TEXT,
         cancelled_at TEXT,
         cancellation_reason TEXT,
         stamped_at TEXT,
-        photos TEXT
+        photos TEXT DEFAULT '[]',
+        estimated_price REAL DEFAULT 0.0
       );
 
       CREATE TABLE IF NOT EXISTS loyalty_profiles (
@@ -179,13 +91,34 @@ async function initCloudflareD1Database(db) {
         message TEXT NOT NULL,
         appointment_id TEXT,
         plate TEXT,
-        customer_name TEXT
+        customer_name TEXT,
+        is_read INTEGER DEFAULT 0
+      );
+
+      CREATE TABLE IF NOT EXISTS business_config (
+        id TEXT PRIMARY KEY DEFAULT 'default',
+        name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        whatsapp TEXT NOT NULL,
+        address TEXT NOT NULL,
+        working_hours TEXT NOT NULL,
+        max_stamps INTEGER NOT NULL DEFAULT 5,
+        gift_reward_title TEXT NOT NULL,
+        gift_reward_desc TEXT NOT NULL,
+        updated_at TEXT NOT NULL
       );
 
       CREATE INDEX IF NOT EXISTS idx_appointments_plate ON appointments(customer_plate_number);
       CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(date);
+      CREATE INDEX IF NOT EXISTS idx_appointments_status ON appointments(status);
       CREATE INDEX IF NOT EXISTS idx_loyalty_voucher ON loyalty(voucher_code);
+      CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
     `);
+
+    // Migrations for existing tables
+    try { await db.exec("ALTER TABLE appointments ADD COLUMN customer_email TEXT;"); } catch {}
+    try { await db.exec("ALTER TABLE appointments ADD COLUMN admin_notes TEXT;"); } catch {}
+    try { await db.exec("ALTER TABLE appointments ADD COLUMN estimated_price REAL DEFAULT 0.0;"); } catch {}
   } catch (err) {
     console.warn('Cloudflare D1 auto-migration notice:', err);
   }
@@ -240,15 +173,57 @@ export default {
         );
       }
 
+      // Cloudflare D1 Full Database Purge & Clean Reset Endpoint
+      if (url.pathname === '/api/d1/reset' && request.method === 'POST') {
+        memoryAppointments = [];
+        memoryLoyalty = [];
+        memoryNotifications = [];
+        memoryCustomers = [];
+
+        if (db) {
+          try {
+            await db.exec(`
+              DROP TABLE IF EXISTS appointments;
+              DROP TABLE IF EXISTS customers;
+              DROP TABLE IF EXISTS loyalty_profiles;
+              DROP TABLE IF EXISTS loyalty;
+              DROP TABLE IF EXISTS system_notifications;
+              DROP TABLE IF EXISTS business_config;
+            `);
+            await initCloudflareD1Database(db);
+          } catch (resetErr) {
+            console.warn('D1 reset warning:', resetErr);
+          }
+        }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: 'Veritabanı başarıyla sıfırlandı. Tüm eski ve demo veriler temizlendi, boş tablolar hazırlandı.',
+            tables: ['appointments', 'customers', 'loyalty_profiles', 'system_notifications', 'business_config'],
+            d1Connected: Boolean(db),
+          }),
+          { headers: CORS_HEADERS }
+        );
+      }
+
       // Cloudflare D1 SQL Query Execution Endpoint
       if (url.pathname === '/api/d1/query' && request.method === 'POST') {
         const { sql, params = [] } = await request.json().catch(() => ({}));
         if (db && sql) {
           try {
+            const isRead = /^\s*(SELECT|PRAGMA|EXPLAIN)/i.test(sql);
             const stmt = db.prepare(sql);
-            const queryRes = params.length > 0 ? await stmt.bind(...params).all() : await stmt.all();
+            const queryRes = isRead
+              ? (params.length > 0 ? await stmt.bind(...params).all() : await stmt.all())
+              : (params.length > 0 ? await stmt.bind(...params).run() : await stmt.run());
+
             return new Response(
-              JSON.stringify({ success: true, results: queryRes.results || [], meta: queryRes.meta || {} }),
+              JSON.stringify({
+                success: queryRes.success ?? true,
+                results: queryRes.results || [],
+                meta: queryRes.meta || {}
+              }),
               { headers: CORS_HEADERS }
             );
           } catch (d1Err) {
@@ -279,6 +254,9 @@ export default {
           let list = memoryAppointments;
           if (params.length > 0 && sqlLower.includes('where id =')) {
             list = list.filter((a) => a.id === params[0]);
+          }
+          if (sqlLower.includes('count(')) {
+            return new Response(JSON.stringify({ success: true, results: [{ cnt: list.length, 'count(*)': list.length }], meta: { changes: 0 } }), { headers: CORS_HEADERS });
           }
           return new Response(JSON.stringify({ success: true, results: list, meta: { changes: 0 } }), { headers: CORS_HEADERS });
         }
@@ -500,6 +478,16 @@ export default {
       // 3. Appointments list & creation
       if (url.pathname === '/api/appointments') {
         if (request.method === 'GET') {
+          if (db) {
+            try {
+              const d1Rows = await db.prepare("SELECT * FROM appointments ORDER BY created_at DESC;").all();
+              if (d1Rows && d1Rows.results && d1Rows.results.length > 0) {
+                return new Response(JSON.stringify(d1Rows.results), { headers: CORS_HEADERS });
+              }
+            } catch (err) {
+              console.warn('D1 GET appointments error:', err);
+            }
+          }
           return new Response(JSON.stringify(memoryAppointments), { headers: CORS_HEADERS });
         }
 
@@ -507,8 +495,47 @@ export default {
           const body = await request.json();
           if (body.reschedulingOldId) {
             memoryAppointments = memoryAppointments.filter((a) => a.id !== body.reschedulingOldId);
+            if (db) {
+              try { await db.prepare("DELETE FROM appointments WHERE id = ?;").bind(body.reschedulingOldId).run(); } catch {}
+            }
           }
           memoryAppointments = [body, ...memoryAppointments.filter((a) => a.id !== body.id)];
+
+          if (db) {
+            try {
+              await db.prepare(`
+                INSERT OR REPLACE INTO appointments (
+                  id, created_at, vehicle_type, selected_services, date, time,
+                  total_duration_minutes, customer_full_name, customer_phone,
+                  customer_plate_number, customer_car_model, customer_notes,
+                  customer_email, status, wash_stage, stage_updated_at, admin_notes,
+                  photos
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+              `).bind(
+                body.id,
+                body.createdAt || new Date().toISOString(),
+                body.vehicleType || 'sedan',
+                JSON.stringify(body.selectedServices || []),
+                body.date,
+                body.time,
+                body.totalDurationMinutes || 45,
+                body.customer?.fullName || '',
+                body.customer?.phone || '',
+                (body.customer?.plateNumber || '').toUpperCase().trim(),
+                body.customer?.carModel || '',
+                body.customer?.notes || '',
+                body.customer?.email || '',
+                body.status || 'confirmed',
+                body.washStage || 'queue',
+                body.stageUpdatedAt || new Date().toISOString(),
+                body.adminNotes || null,
+                JSON.stringify(body.photos || [])
+              ).run();
+            } catch (d1PostErr) {
+              console.warn('D1 POST appointment error:', d1PostErr);
+            }
+          }
+
           return new Response(JSON.stringify(body), { status: 201, headers: CORS_HEADERS });
         }
       }
@@ -518,15 +545,31 @@ export default {
       if (cancelMatch && request.method === 'POST') {
         const aptId = cancelMatch[1];
         const body = await request.json().catch(() => ({}));
+        const now = new Date().toISOString();
+        const cancelledBy = body.cancelledBy || 'customer';
+        const reason = body.reason || 'İptal edildi';
+
+        if (db) {
+          try {
+            await db.prepare(`
+              UPDATE appointments 
+              SET status = 'cancelled', cancelled_by = ?, cancelled_at = ?, cancellation_reason = ? 
+              WHERE id = ?;
+            `).bind(cancelledBy, now, reason, aptId).run();
+          } catch (d1CancelErr) {
+            console.warn('D1 cancel error:', d1CancelErr);
+          }
+        }
+
         const apt = memoryAppointments.find((a) => a.id === aptId);
         if (apt) {
           apt.status = 'cancelled';
-          apt.cancelledBy = body.cancelledBy || 'customer';
-          apt.cancelledAt = new Date().toISOString();
-          apt.cancellationReason = body.reason || 'İptal edildi';
+          apt.cancelledBy = cancelledBy;
+          apt.cancelledAt = now;
+          apt.cancellationReason = reason;
           return new Response(JSON.stringify(apt), { headers: CORS_HEADERS });
         }
-        return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: CORS_HEADERS });
+        return new Response(JSON.stringify({ success: true, id: aptId, status: 'cancelled' }), { headers: CORS_HEADERS });
       }
 
       // 5. Update / Delete appointment
@@ -535,15 +578,34 @@ export default {
         const aptId = aptMatch[1];
         if (request.method === 'PUT') {
           const patch = await request.json();
+          if (db) {
+            try {
+              if (patch.status) {
+                await db.prepare("UPDATE appointments SET status = ? WHERE id = ?;").bind(patch.status, aptId).run();
+              }
+              if (patch.washStage) {
+                await db.prepare("UPDATE appointments SET wash_stage = ?, stage_updated_at = ? WHERE id = ?;").bind(patch.washStage, new Date().toISOString(), aptId).run();
+              }
+            } catch (err) {
+              console.warn('D1 PUT error:', err);
+            }
+          }
           const idx = memoryAppointments.findIndex((a) => a.id === aptId);
           if (idx >= 0) {
             memoryAppointments[idx] = { ...memoryAppointments[idx], ...patch, id: aptId };
             return new Response(JSON.stringify(memoryAppointments[idx]), { headers: CORS_HEADERS });
           }
-          return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: CORS_HEADERS });
+          return new Response(JSON.stringify({ success: true, id: aptId, ...patch }), { headers: CORS_HEADERS });
         }
 
         if (request.method === 'DELETE') {
+          if (db) {
+            try {
+              await db.prepare("DELETE FROM appointments WHERE id = ?;").bind(aptId).run();
+            } catch (err) {
+              console.warn('D1 DELETE error:', err);
+            }
+          }
           memoryAppointments = memoryAppointments.filter((a) => a.id !== aptId);
           return new Response(JSON.stringify({ success: true }), { headers: CORS_HEADERS });
         }

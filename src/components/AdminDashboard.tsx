@@ -59,6 +59,7 @@ import {
 } from '../utils/storage';
 import {
   checkAndInitializeSchema,
+  resetDatabaseClean,
   fetchAppointmentsSQL,
   fetchLoyaltyProfilesSQL,
   insertAppointmentSQL,
@@ -113,11 +114,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   isDarkMode,
   onExitAdmin,
 }) => {
-  // Authentication State
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return sessionStorage.getItem('esse_admin_auth') === 'true';
-  });
+  // Authentication State (in-memory, zero sessionStorage)
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [passwordError, setPasswordError] = useState<string>('');
 
@@ -268,6 +266,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const cancelled = cancelledAppointments.length;
     return { active, confirmed, inProgress, pending, cancelled };
   }, [activeAppointments, cancelledAppointments]);
+
+  // Live Dynamic Analytics (Strictly computed from real D1 appointments and loyalty profiles)
+  const liveAnalytics = useMemo(() => {
+    return calculateLiveAnalytics(allAppointments, loyaltyProfiles, todayStr);
+  }, [allAppointments, loyaltyProfiles, todayStr]);
 
   // Filtered Active Appointments
   const filteredActiveAppointments = useMemo(() => {
@@ -427,6 +430,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  // Cloudflare D1 Full Database Reset & Purge (Zero Mock Data)
+  const handleResetDatabaseClean = async () => {
+    if (!window.confirm('DİKKAT: Veritabanındaki tüm eski/demo veriler temizlenecek ve tablolar boş olarak sıfırlanacaktır. Devam etmek istiyor musunuz?')) return;
+    setIsD1Initializing(true);
+    setD1InitLogs(['🧹 Cloudflare D1 veritabanı tamamen sıfırlanıyor (Demo veriler temizleniyor)...']);
+    try {
+      const res = await resetDatabaseClean();
+      setD1InitLogs((prev) => [
+        ...prev,
+        `✅ ${res.message}`,
+        '✨ Veritabanı başarıyla temizlendi, sıfır mock veri!',
+      ]);
+      showToast('Cloudflare D1 veritabanı sıfırlandı ve temizlendi!');
+      await reloadData();
+    } catch (err: any) {
+      setD1InitLogs((prev) => [...prev, `❌ Hata: ${err.message}`]);
+      showToast('Sıfırlama hatası: ' + err.message);
+    } finally {
+      setIsD1Initializing(false);
+    }
+  };
+
   // Cloudflare D1 Interactive SQL Query Runner
   const handleExecuteSql = async () => {
     if (!sqlQueryInput.trim()) return;
@@ -484,7 +509,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const todayApts = allAppointments.filter((a) => a.date === todayStr);
     const completedApts = todayApts.filter((a) => a.status === 'completed');
     const cancelledApts = todayApts.filter((a) => a.status === 'cancelled');
-    const estRevenue = completedApts.length * 450;
+    const estRevenue = liveAnalytics.estimatedDailyRevenue;
 
     const reportText = `🚗 *ESSE OTO YIKAMA GÜN SONU RAPORU*
 📅 Tarih: ${formatTurkishDate(todayStr)}
@@ -518,14 +543,11 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
     }
   };
 
-  // Handle Authentication Submission (sessionStorage / memory only)
+  // Handle Authentication Submission (in-memory, zero sessionStorage)
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (passwordInput === SECURE_ADMIN_PASSWORD) {
       setIsAuthenticated(true);
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem('esse_admin_auth', 'true');
-      }
       setPasswordError('');
       setPasswordInput('');
     } else {
@@ -535,9 +557,6 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
 
   const handleLogout = () => {
     setIsAuthenticated(false);
-    if (typeof window !== 'undefined') {
-      sessionStorage.removeItem('esse_admin_auth');
-    }
     setPasswordInput('');
     setPasswordError('');
   };
@@ -1685,21 +1704,23 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
               <div className="p-4 rounded-3xl bg-zinc-900/80 border border-amber-500/30 space-y-1">
                 <div className="text-[11px] font-bold uppercase text-amber-400">Tahmini Günlük Ciro</div>
                 <div className="text-2xl font-black text-amber-400">
-                  ~{(allAppointments.filter((a) => a.date === todayStr && a.status === 'completed').length * 450).toLocaleString('tr-TR')} ₺
+                  {liveAnalytics.estimatedDailyRevenue.toLocaleString('tr-TR')} ₺
                 </div>
-                <div className="text-[10px] text-zinc-500">Standart & Özel İşlemler</div>
+                <div className="text-[10px] text-zinc-500">D1 Gerçek Hizmet Fiyatları</div>
               </div>
 
               <div className="p-4 rounded-3xl bg-zinc-900/80 border border-white/10 space-y-1">
                 <div className="text-[11px] font-bold uppercase text-zinc-400">Ortalama Yıkama Süresi</div>
-                <div className="text-2xl font-black text-cyan-400">~42 Dakika</div>
-                <div className="text-[10px] text-zinc-500">Peron Başına Hız</div>
+                <div className="text-2xl font-black text-cyan-400">
+                  {liveAnalytics.averageWashMinutes > 0 ? `~${liveAnalytics.averageWashMinutes} Dakika` : '0 Dakika'}
+                </div>
+                <div className="text-[10px] text-zinc-500">Peron Başına Hız (D1)</div>
               </div>
 
               <div className="p-4 rounded-3xl bg-zinc-900/80 border border-purple-500/30 space-y-1">
                 <div className="text-[11px] font-bold uppercase text-purple-400">Sadakat Ödülü Kullanan</div>
                 <div className="text-2xl font-black text-purple-300">
-                  {loyaltyProfiles.filter((p) => p.stamps >= 5).length} Müşteri
+                  {liveAnalytics.loyaltyGiftEligibleCount} Müşteri
                 </div>
                 <div className="text-[10px] text-zinc-500">5/5 Damga Tamamlandı</div>
               </div>
@@ -1712,24 +1733,25 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
                 <h4 className="text-xs font-black uppercase text-zinc-300 tracking-wider">
                   En Çok Tercih Edilen Hizmetler
                 </h4>
-                <div className="space-y-2.5 text-xs">
-                  {[
-                    { name: 'Cilalı İç-Dış Yıkama', count: 18, share: '48%' },
-                    { name: 'VIP Köpüklü Yıkama + Sıvı Cila', count: 11, share: '30%' },
-                    { name: 'Detaylı İç Kuaför & Ozon', count: 5, share: '14%' },
-                    { name: 'Motor Koruma & Jant Parlatma', count: 3, share: '8%' },
-                  ].map((s, idx) => (
-                    <div key={idx} className="space-y-1">
-                      <div className="flex justify-between text-zinc-200 font-bold">
-                        <span>{s.name}</span>
-                        <span className="font-mono text-amber-400">{s.count} Araç ({s.share})</span>
+                {liveAnalytics.popularServices.length === 0 ? (
+                  <div className="p-8 rounded-2xl bg-zinc-950/60 border border-white/5 text-center text-zinc-500 text-xs">
+                    Henüz işlem görmüş hizmet bulunmuyor (D1 verisi boş)
+                  </div>
+                ) : (
+                  <div className="space-y-2.5 text-xs">
+                    {liveAnalytics.popularServices.map((s, idx) => (
+                      <div key={idx} className="space-y-1">
+                        <div className="flex justify-between text-zinc-200 font-bold">
+                          <span>{s.name}</span>
+                          <span className="font-mono text-amber-400">{s.count} Araç ({s.share})</span>
+                        </div>
+                        <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
+                          <div className="bg-amber-500 h-full rounded-full" style={{ width: s.share }} />
+                        </div>
                       </div>
-                      <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
-                        <div className="bg-amber-500 h-full rounded-full" style={{ width: s.share }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* 4 Peron Efficiency */}
@@ -1738,12 +1760,7 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
                   4 Peron Günlük Doluluk Oranı
                 </h4>
                 <div className="grid grid-cols-2 gap-2.5 text-xs">
-                  {[
-                    { peron: '1. Peron (Hızlı Yıkama)', rate: '%85', count: '9 Araç', color: 'text-amber-400' },
-                    { peron: '2. Peron (Standart Bakım)', rate: '%78', count: '8 Araç', color: 'text-cyan-400' },
-                    { peron: '3. Peron (Detay & Cila)', rate: '%65', count: '5 Araç', color: 'text-emerald-400' },
-                    { peron: '4. Peron (VIP & Kuaför)', rate: '%55', count: '4 Araç', color: 'text-purple-400' },
-                  ].map((p, idx) => (
+                  {liveAnalytics.peronOccupancy.map((p, idx) => (
                     <div key={idx} className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/5 space-y-1">
                       <div className="text-[10px] text-zinc-400 font-bold">{p.peron}</div>
                       <div className={`text-lg font-black ${p.color}`}>{p.rate}</div>
@@ -1860,9 +1877,9 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
                   type="button"
                   onClick={async () => {
                     const next = Math.min(5, selectedLoyaltyCustomer.stamps + 1);
-                    const updated = setCustomerStampsDirect(selectedLoyaltyCustomer.plate, next);
+                    setCustomerStampsDirect(selectedLoyaltyCustomer.plate, next);
                     await saveLoyaltyStampSQL(selectedLoyaltyCustomer.plate, next, selectedLoyaltyCustomer.fullName, selectedLoyaltyCustomer.phone);
-                    setSelectedLoyaltyCustomer(updated);
+                    setSelectedLoyaltyCustomer((prev) => prev ? { ...prev, stamps: next } : null);
                     await reloadData();
                     showToast(`${selectedLoyaltyCustomer.plate} için +1 damga eklendi.`);
                   }}
@@ -1875,9 +1892,9 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
                   type="button"
                   onClick={async () => {
                     const next = Math.max(0, selectedLoyaltyCustomer.stamps - 1);
-                    const updated = setCustomerStampsDirect(selectedLoyaltyCustomer.plate, next);
+                    setCustomerStampsDirect(selectedLoyaltyCustomer.plate, next);
                     await saveLoyaltyStampSQL(selectedLoyaltyCustomer.plate, next, selectedLoyaltyCustomer.fullName, selectedLoyaltyCustomer.phone);
-                    setSelectedLoyaltyCustomer(updated);
+                    setSelectedLoyaltyCustomer((prev) => prev ? { ...prev, stamps: next } : null);
                     await reloadData();
                     showToast(`${selectedLoyaltyCustomer.plate} için 1 damga silindi.`);
                   }}
@@ -1889,9 +1906,9 @@ ${completedApts.slice(0, 8).map((a) => `• ${a.customer.plateNumber} (${a.custo
                 <button
                   type="button"
                   onClick={async () => {
-                    const updated = setCustomerStampsDirect(selectedLoyaltyCustomer.plate, 0);
+                    setCustomerStampsDirect(selectedLoyaltyCustomer.plate, 0);
                     await saveLoyaltyStampSQL(selectedLoyaltyCustomer.plate, 0, selectedLoyaltyCustomer.fullName, selectedLoyaltyCustomer.phone);
-                    setSelectedLoyaltyCustomer(updated);
+                    setSelectedLoyaltyCustomer((prev) => prev ? { ...prev, stamps: 0 } : null);
                     await reloadData();
                     showToast('Damgalar sıfırlandı.');
                   }}

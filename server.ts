@@ -22,10 +22,8 @@ interface DatabaseStructure {
   config: Record<string, any>;
 }
 
-// Default Seed Data for Automatic Initialization
+// Clean Database Initialization (Zero Mock / Demo Data)
 function getDefaultDatabase(): DatabaseStructure {
-  const today = new Date().toISOString().split('T')[0];
-  
   return {
     version: '2.0.0-cloudflare-sql',
     lastUpdated: new Date().toISOString(),
@@ -36,129 +34,10 @@ function getDefaultDatabase(): DatabaseStructure {
       workingHours: '08:30 - 18:30 (Pazartesi - Cumartesi)',
       peronCount: 4,
     },
-    customers: [
-      {
-        plateNumber: '09 DB 482',
-        fullName: 'Muhittin Demir',
-        phone: '0532 100 20 30',
-        carModel: 'BMW 320i',
-        email: 'muhittin@example.com',
-        lastVisit: today,
-        totalVisits: 6,
-        createdAt: today,
-      },
-      {
-        plateNumber: '09 AK 990',
-        fullName: 'Ayşe Karaca',
-        phone: '0544 222 33 44',
-        carModel: 'Volkswagen Tiguan',
-        email: 'ayse@example.com',
-        lastVisit: today,
-        totalVisits: 4,
-        createdAt: today,
-      },
-    ],
-    appointments: [
-      {
-        id: 'ESSE-1092',
-        createdAt: new Date().toISOString(),
-        vehicleType: 'sedan',
-        selectedServices: [
-          {
-            id: 'wash_standard',
-            name: 'Cilalı İç-Dış Yıkama',
-            category: 'wash',
-            description: 'Ph nötr aktif kar köpüğü, çiziksiz çift kova süngerleme, jant balata tozu arındırma, detaylı iç vakumlama.',
-            durationMinutes: 45,
-          },
-        ],
-        date: today,
-        time: '10:30 - 11:30 (1. Peron)',
-        totalDurationMinutes: 45,
-        customer: {
-          fullName: 'Muhittin Demir',
-          phone: '0532 100 20 30',
-          plateNumber: '09 DB 482',
-          carModel: 'BMW 320i',
-          notes: 'Deri koltuklara özel besleyici süt uygulansın.',
-        },
-        status: 'in_progress',
-        washStage: 'foam_prewash',
-        stageUpdatedAt: new Date().toISOString(),
-        photos: [
-          {
-            id: 'sample-p1',
-            type: 'before',
-            url: 'https://images.unsplash.com/photo-1520340356584-f9917d1eea6f?auto=format&fit=crop&w=800&q=80',
-            label: 'Ön Kabul Çizik Kontrolü',
-            takenAt: new Date().toISOString(),
-          },
-        ],
-      },
-      {
-        id: 'ESSE-1093',
-        createdAt: new Date(Date.now() - 3600000).toISOString(),
-        vehicleType: 'suv',
-        selectedServices: [
-          {
-            id: 'wash_vip',
-            name: 'VIP Köpüklü Yıkama + Sıvı Nano Cila',
-            category: 'wash',
-            description: 'Özel çift kova yöntemi, hidrofobik ıslak cila ile ekstra parlaklık.',
-            durationMinutes: 60,
-          },
-        ],
-        date: today,
-        time: '11:30 - 12:30 (2. Peron)',
-        totalDurationMinutes: 60,
-        customer: {
-          fullName: 'Ayşe Karaca',
-          phone: '0544 222 33 44',
-          plateNumber: '09 AK 990',
-          carModel: 'Volkswagen Tiguan',
-          notes: 'Bagajda evcil hayvan tüyü temizliği yapılsın.',
-        },
-        status: 'confirmed',
-        washStage: 'queue',
-      },
-    ],
-    loyaltyProfiles: [
-      {
-        plate: '09 DB 482',
-        fullName: 'Muhittin Demir',
-        phone: '0532 100 20 30',
-        stamps: 5,
-        voucherCode: 'VIP-ESSE-4820',
-        history: [
-          { id: 'h1', date: today, serviceName: 'Cilalı İç-Dış Yıkama', earnedStamp: 1 },
-          { id: 'h2', date: '2026-09-28', serviceName: 'VIP Nano Cila', earnedStamp: 1 },
-          { id: 'h3', date: '2026-09-15', serviceName: 'Detaylı İç Kuaför', earnedStamp: 1 },
-          { id: 'h4', date: '2026-09-02', serviceName: 'Cilalı Yıkama', earnedStamp: 1 },
-          { id: 'h5', date: '2026-08-20', serviceName: 'Standart Yıkama', earnedStamp: 1 },
-        ],
-        lastUpdated: new Date().toISOString(),
-      },
-      {
-        plate: '09 AK 990',
-        fullName: 'Ayşe Karaca',
-        phone: '0544 222 33 44',
-        stamps: 3,
-        history: [],
-        lastUpdated: new Date().toISOString(),
-      },
-    ],
-    notifications: [
-      {
-        id: 'notif-1',
-        timestamp: new Date().toISOString(),
-        type: 'in_progress',
-        title: '🫧 Köpük & Ön Yıkama Başladı',
-        message: 'Sn. Muhittin Demir, 09 DB 482 aracınız köpüklendi ve ön yıkamaya alındı.',
-        appointmentId: 'ESSE-1092',
-        plate: '09 DB 482',
-        customerName: 'Muhittin Demir',
-      },
-    ],
+    customers: [],
+    appointments: [],
+    loyaltyProfiles: [],
+    notifications: [],
   };
 }
 
@@ -305,6 +184,14 @@ class DatabaseManager {
     this.persist();
     return customer;
   }
+
+  public clearAll(): void {
+    this.data.appointments = [];
+    this.data.customers = [];
+    this.data.loyaltyProfiles = [];
+    this.data.notifications = [];
+    this.persist();
+  }
 }
 
 async function startServer() {
@@ -331,6 +218,20 @@ async function startServer() {
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Cloudflare D1 Full Database Purge & Clean Reset Endpoint
+  app.post('/api/d1/reset', (_req: Request, res: Response) => {
+    try {
+      db.clearAll();
+      return res.json({
+        success: true,
+        message: 'Veritabanı sıfırlandı. Tüm eski ve demo veriler temizlendi, boş tablolar hazırlandı.',
+        tables: ['appointments', 'customers', 'loyalty_profiles', 'system_notifications', 'business_config'],
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
     }
   });
 
@@ -361,7 +262,50 @@ async function startServer() {
         if (params.length > 0 && sqlLower.includes('where id =')) {
           results = results.filter((a) => a.id === params[0]);
         }
-        return res.json({ success: true, results, meta: { changes: 0 } });
+        if (sqlLower.includes('count(')) {
+          return res.json({
+            success: true,
+            results: [{ cnt: results.length, 'count(*)': results.length }],
+            meta: { changes: 0 },
+          });
+        }
+        const sqlRows = results.map((apt: any) => ({
+          id: apt.id,
+          created_at: apt.createdAt || new Date().toISOString(),
+          vehicle_type: apt.vehicleType || 'sedan',
+          selected_services: JSON.stringify(apt.selectedServices || []),
+          date: apt.date,
+          time: apt.time,
+          total_duration_minutes: apt.totalDurationMinutes || 45,
+          customer_full_name: apt.customer?.fullName || '',
+          customer_phone: apt.customer?.phone || '',
+          customer_plate_number: apt.customer?.plateNumber || '',
+          customer_car_model: apt.customer?.carModel || '',
+          customer_notes: apt.customer?.notes || '',
+          customer_email: apt.customer?.email || '',
+          status: apt.status || 'confirmed',
+          wash_stage: apt.washStage || 'queue',
+          stage_updated_at: apt.stageUpdatedAt || null,
+          admin_notes: apt.adminNotes || null,
+          cancelled_by: apt.cancelledBy || null,
+          cancelled_at: apt.cancelledAt || null,
+          cancellation_reason: apt.cancellationReason || null,
+          stamped_at: apt.stampedAt || null,
+          photos: JSON.stringify(apt.photos || []),
+          customer: apt.customer,
+          createdAt: apt.createdAt,
+          vehicleType: apt.vehicleType,
+          selectedServices: apt.selectedServices,
+          totalDurationMinutes: apt.totalDurationMinutes,
+          washStage: apt.washStage,
+          stageUpdatedAt: apt.stageUpdatedAt,
+          adminNotes: apt.adminNotes,
+          cancelledBy: apt.cancelledBy,
+          cancelledAt: apt.cancelledAt,
+          cancellationReason: apt.cancellationReason,
+          stampedAt: apt.stampedAt,
+        }));
+        return res.json({ success: true, results: sqlRows, meta: { changes: 0 } });
       }
 
       if (sqlLower.startsWith('insert') && sqlLower.includes('appointments')) {
@@ -455,6 +399,13 @@ async function startServer() {
       // 3. Loyalty Queries
       if (sqlLower.startsWith('select') && (sqlLower.includes('loyalty') || sqlLower.includes('loyalty_profiles'))) {
         let results = db.getLoyaltyProfiles();
+        if (sqlLower.includes('count(')) {
+          return res.json({
+            success: true,
+            results: [{ cnt: results.length, 'count(*)': results.length }],
+            meta: { changes: 0 },
+          });
+        }
         if (params.length > 0 && sqlLower.includes('plate =')) {
           const clean = String(params[0]).toUpperCase().trim();
           results = results.filter((p) => p.plate.toUpperCase().trim() === clean || p.voucherCode === clean);
@@ -495,7 +446,15 @@ async function startServer() {
 
       // 4. Customers Queries
       if (sqlLower.startsWith('select') && sqlLower.includes('customers')) {
-        return res.json({ success: true, results: db.getCustomers(), meta: { changes: 0 } });
+        const custs = db.getCustomers();
+        if (sqlLower.includes('count(')) {
+          return res.json({
+            success: true,
+            results: [{ cnt: custs.length, 'count(*)': custs.length }],
+            meta: { changes: 0 },
+          });
+        }
+        return res.json({ success: true, results: custs, meta: { changes: 0 } });
       }
 
       if (sqlLower.startsWith('insert') && sqlLower.includes('customers')) {

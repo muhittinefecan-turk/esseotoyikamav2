@@ -1,119 +1,105 @@
-import { AppointmentData, BusinessConfig, CustomerFormData, LoyaltyCustomerProfile, StampHistoryItem, WashStage, VehicleInspectionPhoto } from '../types';
+/**
+ * Cloudflare D1 Unified State & Storage Adapter
+ * 
+ * Replaces all localStorage usage with Cloudflare D1 Storage:
+ * - Pure Cloudflare D1 database operations
+ * - In-memory live session cache synced with D1
+ * - Zero localStorage persistence or mock data
+ */
+
+import {
+  AppointmentData,
+  BusinessConfig,
+  CustomerFormData,
+  LoyaltyCustomerProfile,
+  StampHistoryItem,
+  WashStage,
+  VehicleInspectionPhoto,
+} from '../types';
 import { DEFAULT_BUSINESS_CONFIG } from '../data/businessConfig';
 import { logSystemEvent } from './notifications';
-import { 
-  apiFetchAppointments, 
-  apiCreateAppointment, 
-  apiUpdateAppointment, 
-  apiDeleteAppointment,
-  apiCancelAppointment,
-  apiFetchLoyaltyProfiles,
-  apiSaveLoyaltyStamp,
-  apiRedeemVoucher
-} from './api';
+import {
+  fetchAppointmentsSQL,
+  fetchActiveAppointmentsSQL,
+  insertAppointmentSQL,
+  updateAppointmentStatusSQL,
+  updateWashStageSQL,
+  cancelAppointmentSQL,
+  deleteAppointmentSQL,
+  fetchLoyaltyProfilesSQL,
+  saveLoyaltyStampSQL,
+  completeAndAwardStampSQL,
+  redeemVoucherSQL,
+  saveCustomerSQL,
+  fetchCustomerSQL,
+  addInspectionPhotoSQL,
+  notifyDataChanged,
+} from '../services/db';
 
-const APPOINTMENTS_KEY = 'esse_local_appointments_v3';
-const LOYALTY_PROFILES_KEY = 'esse_loyalty_profiles_v2';
-const CUSTOMER_PROFILE_KEY = 'esse_saved_customer_profile_v1';
-const BLOCKED_SLOTS_KEY = 'esse_blocked_slots_v1';
+// In-memory live cache populated exclusively from D1
+let runtimeAppointments: AppointmentData[] = [];
+let runtimeLoyalty: LoyaltyCustomerProfile[] = [];
+let runtimeCustomerProfile: CustomerFormData | null = null;
+let isSyncing = false;
 
-// Notify all app components that data has updated
-function dispatchDataSync() {
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event('esse_data_updated'));
-  }
-}
+// ----------------------------------------------------
+// D1 LIVE SYNCHRONIZATION
+// ----------------------------------------------------
 
-// Automatic 2-Way Sync with Backend Database
 export async function initializeDatabaseSync(): Promise<void> {
+  if (isSyncing) return;
+  isSyncing = true;
   try {
-    const serverApts = await apiFetchAppointments();
-    if (serverApts && serverApts.length > 0) {
-      const local = getAllStoredAppointments();
-      const map = new Map<string, AppointmentData>();
-      
-      // 1. Seed map with local appointments
-      for (const a of local) {
-        map.set(a.id, a);
-      }
+    const [apts, loyalty, cust] = await Promise.all([
+      fetchAppointmentsSQL(),
+      fetchLoyaltyProfilesSQL(),
+      fetchCustomerSQL(),
+    ]);
 
-      // 2. Merge server appointments with respect to cancellation state
-      for (const serverApt of serverApts) {
-        const localApt = map.get(serverApt.id);
-        if (localApt) {
-          // If locally it was cancelled, PRESERVE CANCELLATION and push to server!
-          if (localApt.status === 'cancelled') {
-            map.set(serverApt.id, localApt);
-            if (serverApt.status !== 'cancelled') {
-              apiCancelAppointment(localApt.id, localApt.cancelledBy || 'customer', localApt.cancellationReason).catch(() => {});
-            }
-          } else if (serverApt.status === 'cancelled') {
-            // Server cancelled it, so keep cancelled locally too
-            map.set(serverApt.id, serverApt);
-          } else {
-            // Keep the latest version
-            map.set(serverApt.id, { ...serverApt, ...localApt });
-          }
-        } else {
-          map.set(serverApt.id, serverApt);
-        }
-      }
+    runtimeAppointments = apts;
+    runtimeLoyalty = loyalty;
+    if (cust) runtimeCustomerProfile = cust;
 
-      const merged = Array.from(map.values()).sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-      localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(merged));
-    }
-
-    const serverLoyalty = await apiFetchLoyaltyProfiles();
-    if (serverLoyalty && serverLoyalty.length > 0) {
-      const local = getLoyaltyProfiles();
-      const map = new Map<string, LoyaltyCustomerProfile>();
-      for (const p of local) map.set(p.plate, p);
-      for (const p of serverLoyalty) map.set(p.plate, p);
-      localStorage.setItem(LOYALTY_PROFILES_KEY, JSON.stringify(Array.from(map.values())));
-    }
-
-    dispatchDataSync();
+    notifyDataChanged();
   } catch (err) {
-    console.warn('Automated database initial sync:', err);
+    console.warn('D1 database sync notice:', err);
+  } finally {
+    isSyncing = false;
   }
 }
 
 if (typeof window !== 'undefined') {
   initializeDatabaseSync();
+  window.addEventListener('esse_data_updated', () => {
+    fetchAppointmentsSQL().then((list) => {
+      runtimeAppointments = list;
+    });
+    fetchLoyaltyProfilesSQL().then((list) => {
+      runtimeLoyalty = list;
+    });
+  });
 }
 
 // ----------------------------------------------------
-// APPOINTMENTS REPOSITORY
+// APPOINTMENTS REPOSITORY (D1-backed)
 // ----------------------------------------------------
 
 export function getAllStoredAppointments(): AppointmentData[] {
-  try {
-    const raw = localStorage.getItem(APPOINTMENTS_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw);
-  } catch (e) {
-    console.error('Failed to load appointments from localStorage', e);
-    return [];
-  }
+  return runtimeAppointments;
 }
 
-// Active appointments only (for active customer and active admin lists)
 export function getActiveAppointments(): AppointmentData[] {
-  return getAllStoredAppointments().filter(
+  return runtimeAppointments.filter(
     (a) => a.status !== 'cancelled' && a.status !== 'completed'
   );
 }
 
-// Backwards compatibility alias
 export function getStoredAppointments(): AppointmentData[] {
-  return getAllStoredAppointments();
+  return runtimeAppointments;
 }
 
-// Cancelled appointments only, sorted newest first
 export function getCancelledAppointments(): AppointmentData[] {
-  return getAllStoredAppointments()
+  return runtimeAppointments
     .filter((a) => a.status === 'cancelled')
     .sort((a, b) => {
       const timeA = new Date(a.cancelledAt || a.createdAt).getTime();
@@ -122,141 +108,105 @@ export function getCancelledAppointments(): AppointmentData[] {
     });
 }
 
-// Completed appointments
 export function getCompletedAppointments(): AppointmentData[] {
-  return getAllStoredAppointments()
+  return runtimeAppointments
     .filter((a) => a.status === 'completed')
     .sort((a, b) => new Date(b.stampedAt || b.createdAt).getTime() - new Date(a.stampedAt || a.createdAt).getTime());
 }
 
 export function saveAppointmentToStorage(appointment: AppointmentData): void {
-  try {
-    const current = getAllStoredAppointments();
-    const updated = [appointment, ...current.filter((a) => a.id !== appointment.id)];
-    localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(updated.slice(0, 150)));
+  // 1. Update runtime cache immediately
+  runtimeAppointments = [appointment, ...runtimeAppointments.filter((a) => a.id !== appointment.id)];
 
-    // Log creation event & notify
-    logSystemEvent({
-      type: 'created',
-      title: '✨ Yeni Randevu Oluşturuldu',
-      message: `Sn. ${appointment.customer.fullName} (${appointment.customer.plateNumber}), ${appointment.date} saat ${appointment.time} randevusu doğrudan sisteme iletildi.`,
-      appointmentId: appointment.id,
-      plate: appointment.customer.plateNumber,
-      customerName: appointment.customer.fullName,
-    });
+  // 2. Persist to Cloudflare D1
+  insertAppointmentSQL(appointment).catch((err) => {
+    console.error('Failed to insert appointment in D1:', err);
+  });
 
-    // Sync to backend automated database
-    apiCreateAppointment(appointment).catch(() => {});
+  // 3. Log event
+  logSystemEvent({
+    type: 'created',
+    title: '✨ Yeni Randevu Oluşturuldu',
+    message: `Sn. ${appointment.customer.fullName} (${appointment.customer.plateNumber}), ${appointment.date} saat ${appointment.time} randevusu D1 veri tabanına işlendi.`,
+    appointmentId: appointment.id,
+    plate: appointment.customer.plateNumber,
+    customerName: appointment.customer.fullName,
+  });
 
-    dispatchDataSync();
-  } catch (e) {
-    console.error('Failed to save appointment to localStorage', e);
-  }
+  notifyDataChanged();
 }
 
 export function approveAppointment(id: string): AppointmentData | null {
-  try {
-    const current = getAllStoredAppointments();
-    const apt = current.find((a) => a.id === id);
-    if (!apt) return null;
+  const apt = runtimeAppointments.find((a) => a.id === id);
+  if (!apt) return null;
 
-    // If already confirmed, move to in_progress (Yıkamaya Alındı)
-    const newStatus: AppointmentData['status'] = apt.status === 'confirmed' ? 'in_progress' : 'confirmed';
-    
-    const updated = current.map((a) => {
-      if (a.id === id) {
-        return { ...a, status: newStatus };
-      }
-      return a;
-    });
+  const newStatus: AppointmentData['status'] = apt.status === 'confirmed' ? 'in_progress' : 'confirmed';
+  const updatedApt: AppointmentData = { ...apt, status: newStatus };
 
-    localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(updated));
+  runtimeAppointments = runtimeAppointments.map((a) => (a.id === id ? updatedApt : a));
 
-    if (newStatus === 'confirmed') {
-      logSystemEvent({
-        type: 'approved',
-        title: '✅ Randevunuz Onaylandı (Esse Detailing)',
-        message: `Sn. ${apt.customer.fullName}, ${apt.customer.plateNumber} aracınızın randevusu işletme tarafından onaylandı ve sıraya alındı.`,
-        appointmentId: apt.id,
-        plate: apt.customer.plateNumber,
-        customerName: apt.customer.fullName,
-      });
-    } else {
-      logSystemEvent({
-        type: 'in_progress',
-        title: '🫧 Aracınız Yıkamaya Alındı (Esse Detailing)',
-        message: `Sn. ${apt.customer.fullName}, ${apt.customer.plateNumber} aracınızın perondaki yıkama ve bakım işlemleri başlatıldı.`,
-        appointmentId: apt.id,
-        plate: apt.customer.plateNumber,
-        customerName: apt.customer.fullName,
-      });
-    }
+  updateAppointmentStatusSQL(id, newStatus).catch(() => {});
 
-    // Sync to backend database
-    apiUpdateAppointment(id, { status: newStatus }).catch(() => {});
-
-    dispatchDataSync();
-    return { ...apt, status: newStatus };
-  } catch (e) {
-    console.error('Failed to approve appointment', e);
-    return null;
-  }
-}
-
-export function completeAndAwardStamp(id: string): { apt: AppointmentData; currentStamps: number; giftUnlocked: boolean } | null {
-  try {
-    const current = getAllStoredAppointments();
-    const apt = current.find((a) => a.id === id);
-    if (!apt) return null;
-
-    const plate = apt.customer.plateNumber.toUpperCase().trim();
-    
-    // Check if this appointment was already stamped to prevent duplicate stamps
-    let currentStamps = 0;
-    let giftUnlocked = false;
-
-    if (!apt.stampedAt) {
-      const stampResult = addStampToCustomer(plate, apt);
-      currentStamps = stampResult.stamps;
-      giftUnlocked = stampResult.giftUnlocked;
-    } else {
-      currentStamps = getCustomerStampsCount(plate);
-    }
-
-    // Mark as completed
-    const stampedAt = new Date().toISOString();
-    const updated = current.map((a) => {
-      if (a.id === id) {
-        return {
-          ...a,
-          status: 'completed' as const,
-          stampedAt,
-        };
-      }
-      return a;
-    });
-
-    localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(updated));
-
+  if (newStatus === 'confirmed') {
     logSystemEvent({
-      type: 'completed',
-      title: '🎉 Randevunuz Tamamlandı!',
-      message: `Sn. ${apt.customer.fullName}, ${apt.customer.plateNumber} aracınızın işlemleri tamamlandı. Dijital kartınıza 1 damga eklendi (Toplam: ${currentStamps}/5).`,
+      type: 'approved',
+      title: '✅ Randevunuz Onaylandı (Esse Detailing)',
+      message: `Sn. ${apt.customer.fullName}, ${apt.customer.plateNumber} aracınızın randevusu işletme tarafından onaylandı ve sıraya alındı.`,
       appointmentId: apt.id,
       plate: apt.customer.plateNumber,
       customerName: apt.customer.fullName,
     });
-
-    dispatchDataSync();
-    return {
-      apt: { ...apt, status: 'completed', stampedAt },
-      currentStamps,
-      giftUnlocked,
-    };
-  } catch (e) {
-    console.error('Failed to complete appointment and award stamp', e);
-    return null;
+  } else {
+    logSystemEvent({
+      type: 'in_progress',
+      title: '🫧 Aracınız Yıkamaya Alındı (Esse Detailing)',
+      message: `Sn. ${apt.customer.fullName}, ${apt.customer.plateNumber} aracınızın perondaki yıkama ve bakım işlemleri başlatıldı.`,
+      appointmentId: apt.id,
+      plate: apt.customer.plateNumber,
+      customerName: apt.customer.fullName,
+    });
   }
+
+  notifyDataChanged();
+  return updatedApt;
+}
+
+export function completeAndAwardStamp(id: string): { apt: AppointmentData; currentStamps: number; giftUnlocked: boolean } | null {
+  const apt = runtimeAppointments.find((a) => a.id === id);
+  if (!apt) return null;
+
+  const plate = (apt.customer.plateNumber || '').toUpperCase().trim();
+  const existingProfile = runtimeLoyalty.find((p) => p.plate.toUpperCase().trim() === plate);
+  const currentStamps = Math.min(5, (existingProfile?.stamps || 0) + 1);
+  const giftUnlocked = currentStamps >= 5;
+  const stampedAt = new Date().toISOString();
+
+  const updatedApt: AppointmentData = {
+    ...apt,
+    status: 'completed',
+    stampedAt,
+  };
+
+  runtimeAppointments = runtimeAppointments.map((a) => (a.id === id ? updatedApt : a));
+
+  // Execute D1 transaction
+  completeAndAwardStampSQL(id).catch(() => {});
+
+  logSystemEvent({
+    type: 'completed',
+    title: '🎉 Randevunuz Tamamlandı!',
+    message: `Sn. ${apt.customer.fullName}, ${apt.customer.plateNumber} aracınızın işlemleri tamamlandı. Dijital kartınıza 1 damga eklendi (${currentStamps}/5).`,
+    appointmentId: apt.id,
+    plate: apt.customer.plateNumber,
+    customerName: apt.customer.fullName,
+  });
+
+  notifyDataChanged();
+  return {
+    apt: updatedApt,
+    currentStamps,
+    giftUnlocked,
+  };
 }
 
 export function cancelAppointment(
@@ -264,328 +214,182 @@ export function cancelAppointment(
   cancelledBy: 'customer' | 'admin',
   reason?: string
 ): AppointmentData | null {
-  try {
-    const current = getAllStoredAppointments();
-    const apt = current.find((a) => a.id === id);
-    if (!apt) return null;
+  const apt = runtimeAppointments.find((a) => a.id === id);
+  if (!apt) return null;
 
-    const cancelledAt = new Date().toISOString();
-    const cancellationReason = reason || (cancelledBy === 'customer' 
-      ? 'Müşteri tarafından iptal edildi' 
-      : 'İşletme tarafından iptal edildi');
+  const cancelledAt = new Date().toISOString();
+  const cancellationReason = reason || (cancelledBy === 'customer' 
+    ? 'Müşteri tarafından iptal edildi' 
+    : 'İşletme tarafından iptal edildi');
 
-    // Move to cancelled state with metadata
-    const updated = current.map((a) => {
-      if (a.id === id) {
-        return {
-          ...a,
-          status: 'cancelled' as const,
-          cancelledBy,
-          cancelledAt,
-          cancellationReason,
-        };
-      }
-      return a;
-    });
+  const updatedApt: AppointmentData = {
+    ...apt,
+    status: 'cancelled',
+    cancelledBy,
+    cancelledAt,
+    cancellationReason,
+  };
 
-    localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(updated));
+  runtimeAppointments = runtimeAppointments.map((a) => (a.id === id ? updatedApt : a));
 
-    if (cancelledBy === 'customer') {
-      logSystemEvent({
-        type: 'cancelled_by_customer',
-        title: '⚠️ Müşteri Randevuyu İptal Etti',
-        message: `${apt.customer.fullName} (${apt.customer.plateNumber}) nolu randevu müşteri tarafından iptal edildi. Peron tekrar müsait duruma getirildi.`,
-        appointmentId: apt.id,
-        plate: apt.customer.plateNumber,
-        customerName: apt.customer.fullName,
-      });
-    } else {
-      logSystemEvent({
-        type: 'cancelled_by_admin',
-        title: '✕ Randevunuz İşletme Tarafından İptal Edildi',
-        message: `Sn. ${apt.customer.fullName}, ${apt.customer.plateNumber} nolu randevunuz işletme tarafından iptal edildi. Detaylı bilgi için lütfen işletmemizle iletişime geçiniz.`,
-        appointmentId: apt.id,
-        plate: apt.customer.plateNumber,
-        customerName: apt.customer.fullName,
-      });
-    }
+  // Persist directly to D1
+  cancelAppointmentSQL(id, cancelledBy, cancellationReason).catch(() => {});
 
-    // Sync cancellation immediately to the persistent server database
-    apiCancelAppointment(id, cancelledBy, cancellationReason).catch((err) => {
-      console.warn('Failed to sync cancellation to server:', err);
-    });
-
-    dispatchDataSync();
-    return {
-      ...apt,
-      status: 'cancelled',
-      cancelledBy,
-      cancelledAt,
-      cancellationReason,
-    };
-  } catch (e) {
-    console.error('Failed to cancel appointment', e);
-    return null;
-  }
-}
-
-// Reactivate cancelled appointment
-export function reactivateAppointment(id: string): AppointmentData | null {
-  try {
-    const current = getAllStoredAppointments();
-    const apt = current.find((a) => a.id === id);
-    if (!apt) return null;
-
-    const updated = current.map((a) => {
-      if (a.id === id) {
-        return {
-          ...a,
-          status: 'confirmed' as const,
-          cancelledBy: undefined,
-          cancelledAt: undefined,
-          cancellationReason: undefined,
-        };
-      }
-      return a;
-    });
-
-    localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(updated));
-
+  if (cancelledBy === 'customer') {
     logSystemEvent({
-      type: 'approved',
-      title: '🔄 Randevu Tekrar Aktif Edildi',
-      message: `${apt.customer.fullName} (${apt.customer.plateNumber}) randevusu yönetici tarafından yeniden aktif randevular listesine alındı.`,
+      type: 'cancelled_by_customer',
+      title: '⚠️ Müşteri Randevuyu İptal Etti',
+      message: `${apt.customer.fullName} (${apt.customer.plateNumber}) nolu randevu müşteri tarafından iptal edildi. Peron tekrar müsait duruma getirildi.`,
       appointmentId: apt.id,
       plate: apt.customer.plateNumber,
       customerName: apt.customer.fullName,
     });
-
-    // Sync reactivation to backend server database
-    apiUpdateAppointment(id, {
-      status: 'confirmed',
-      cancelledBy: undefined,
-      cancelledAt: undefined,
-      cancellationReason: undefined,
-    }).catch(() => {});
-
-    dispatchDataSync();
-    return { ...apt, status: 'confirmed' };
-  } catch (e) {
-    console.error('Failed to reactivate appointment', e);
-    return null;
-  }
-}
-
-export function deleteStoredAppointment(id: string): void {
-  try {
-    const current = getAllStoredAppointments();
-    const updated = current.filter((a) => a.id !== id);
-    localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(updated));
-    
-    // Sync to backend automated database
-    apiDeleteAppointment(id).catch(() => {});
-
-    dispatchDataSync();
-  } catch (e) {
-    console.error('Failed to delete appointment from localStorage', e);
-  }
-}
-
-export function updateAppointmentStatus(
-  id: string,
-  status: AppointmentData['status'],
-  adminNotes?: string
-): void {
-  try {
-    const current = getAllStoredAppointments();
-    const updated = current.map((a) => {
-      if (a.id === id) {
-        return {
-          ...a,
-          status,
-          adminNotes: adminNotes !== undefined ? adminNotes : a.adminNotes,
-        };
-      }
-      return a;
+  } else {
+    logSystemEvent({
+      type: 'cancelled_by_admin',
+      title: '✕ Randevunuz İşletme Tarafından İptal Edildi',
+      message: `Sn. ${apt.customer.fullName}, ${apt.customer.plateNumber} nolu randevunuz işletme tarafından iptal edildi. Detaylı bilgi için lütfen işletmemizle iletişime geçiniz.`,
+      appointmentId: apt.id,
+      plate: apt.customer.plateNumber,
+      customerName: apt.customer.fullName,
     });
-    localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(updated));
-    dispatchDataSync();
-  } catch (e) {
-    console.error('Failed to update status in localStorage', e);
   }
+
+  notifyDataChanged();
+  return updatedApt;
 }
 
-// Purge helper
-export function purgeCompletedAppointments(): void {
-  // We keep completed & cancelled records in historical tabs
+export function deleteAppointmentFromStorage(id: string): boolean {
+  runtimeAppointments = runtimeAppointments.filter((a) => a.id !== id);
+  deleteAppointmentSQL(id).catch(() => {});
+  notifyDataChanged();
+  return true;
 }
 
-export function seedSampleAppointmentsIfEmpty(): AppointmentData[] {
-  return getAllStoredAppointments();
+export function updateAppointmentStatusInStorage(
+  id: string,
+  status: AppointmentData['status']
+): AppointmentData | null {
+  const apt = runtimeAppointments.find((a) => a.id === id);
+  if (!apt) return null;
+
+  const updated: AppointmentData = { ...apt, status };
+  runtimeAppointments = runtimeAppointments.map((a) => (a.id === id ? updated : a));
+  updateAppointmentStatusSQL(id, status).catch(() => {});
+  notifyDataChanged();
+  return updated;
+}
+
+export function updateWashStageInStorage(
+  appointmentId: string,
+  stage: WashStage
+): AppointmentData | null {
+  return updateWashStage(appointmentId, stage);
+}
+
+export function purgeCompletedAppointments(): number {
+  const toPurge = runtimeAppointments.filter((a) => a.status === 'completed' || a.status === 'cancelled');
+  const count = toPurge.length;
+  for (const a of toPurge) {
+    deleteAppointmentSQL(a.id).catch(() => {});
+  }
+  runtimeAppointments = runtimeAppointments.filter((a) => a.status !== 'completed' && a.status !== 'cancelled');
+  notifyDataChanged();
+  return count;
 }
 
 // ----------------------------------------------------
-// DIGITAL LOYALTY CARD (5-STAMP) SYSTEM
+// LOYALTY CARD REPOSITORY (D1-backed)
 // ----------------------------------------------------
 
 export function getLoyaltyProfiles(): LoyaltyCustomerProfile[] {
-  try {
-    const raw = localStorage.getItem(LOYALTY_PROFILES_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-export function getCustomerLoyaltyProfile(plate: string): LoyaltyCustomerProfile | null {
-  const cleanPlate = plate.toUpperCase().trim();
-  const profiles = getLoyaltyProfiles();
-  return profiles.find((p) => p.plate === cleanPlate) || null;
+  return runtimeLoyalty;
 }
 
 export function getCustomerStampsCount(plate: string): number {
-  const profile = getCustomerLoyaltyProfile(plate);
-  return profile ? profile.stamps : 0;
+  const clean = plate.toUpperCase().trim();
+  const profile = runtimeLoyalty.find((p) => p.plate.toUpperCase().trim() === clean);
+  return profile?.stamps || 0;
 }
 
 export function addStampToCustomer(
   plate: string,
-  appointment: AppointmentData
-): { stamps: number; giftUnlocked: boolean; profile: LoyaltyCustomerProfile } {
-  const cleanPlate = plate.toUpperCase().trim();
-  const profiles = getLoyaltyProfiles();
-  const existing = profiles.find((p) => p.plate === cleanPlate);
+  appointmentData?: AppointmentData
+): { stamps: number; giftUnlocked: boolean; voucherCode?: string } {
+  const clean = plate.toUpperCase().trim();
+  const existing = runtimeLoyalty.find((p) => p.plate.toUpperCase().trim() === clean);
+  const currentStamps = (existing?.stamps || 0) + 1;
+  const newStamps = currentStamps > 5 ? 5 : currentStamps;
+  const giftUnlocked = newStamps >= 5;
+  const voucherCode = giftUnlocked ? (existing?.voucherCode || `ESSE-VIP-${Math.floor(1000 + Math.random() * 9000)}`) : undefined;
 
-  const historyItem: StampHistoryItem = {
-    id: `stamp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-    appointmentId: appointment.id,
-    date: appointment.date,
-    awardedAt: new Date().toISOString(),
-    serviceNames: appointment.selectedServices.map((s) => s.name),
-    note: `${appointment.time} randevusu`,
-  };
+  const fullName = appointmentData?.customer.fullName || existing?.fullName || 'Müşteri';
+  const phone = appointmentData?.customer.phone || existing?.phone || '';
 
-  let newStamps = 1;
-  let updatedProfile: LoyaltyCustomerProfile;
-
-  if (existing) {
-    newStamps = Math.min(5, existing.stamps + 1);
-    updatedProfile = {
-      ...existing,
-      fullName: appointment.customer.fullName || existing.fullName,
-      phone: appointment.customer.phone || existing.phone,
-      stamps: newStamps,
-      history: [historyItem, ...(existing.history || [])],
-      lastUpdated: new Date().toISOString(),
-    };
-  } else {
-    newStamps = 1;
-    updatedProfile = {
-      plate: cleanPlate,
-      fullName: appointment.customer.fullName,
-      phone: appointment.customer.phone,
-      stamps: 1,
-      history: [historyItem],
-      lastUpdated: new Date().toISOString(),
-    };
-  }
-
-  const updatedProfiles = [
-    updatedProfile,
-    ...profiles.filter((p) => p.plate !== cleanPlate),
-  ];
-
-  localStorage.setItem(LOYALTY_PROFILES_KEY, JSON.stringify(updatedProfiles));
-  dispatchDataSync();
-
-  return {
+  const newProfile: LoyaltyCustomerProfile = {
+    plate: clean,
+    fullName,
+    phone,
     stamps: newStamps,
-    giftUnlocked: newStamps === 5,
-    profile: updatedProfile,
+    voucherCode,
+    history: existing?.history || [],
+    lastUpdated: new Date().toISOString(),
   };
+
+  runtimeLoyalty = [newProfile, ...runtimeLoyalty.filter((p) => p.plate.toUpperCase().trim() !== clean)];
+
+  saveLoyaltyStampSQL(clean, fullName, phone, newStamps).catch(() => {});
+  notifyDataChanged();
+
+  return { stamps: newStamps, giftUnlocked, voucherCode };
 }
 
-export function setCustomerStampsDirect(
-  plate: string,
-  stamps: number,
-  fullName?: string,
-  phone?: string
-): LoyaltyCustomerProfile {
-  const cleanPlate = plate.toUpperCase().trim();
-  const clamped = Math.max(0, Math.min(5, stamps));
-  const profiles = getLoyaltyProfiles();
-  const existing = profiles.find((p) => p.plate === cleanPlate);
+export function setCustomerStampsDirect(plate: string, count: number): void {
+  const clean = plate.toUpperCase().trim();
+  const existing = runtimeLoyalty.find((p) => p.plate.toUpperCase().trim() === clean);
+  const stamps = Math.max(0, Math.min(5, count));
+  const fullName = existing?.fullName || 'Müşteri';
+  const phone = existing?.phone || '';
 
-  let updatedProfile: LoyaltyCustomerProfile;
+  const newProfile: LoyaltyCustomerProfile = {
+    plate: clean,
+    fullName,
+    phone,
+    stamps,
+    history: existing?.history || [],
+    lastUpdated: new Date().toISOString(),
+  };
 
-  if (existing) {
-    updatedProfile = {
-      ...existing,
-      stamps: clamped,
-      fullName: fullName || existing.fullName,
-      phone: phone || existing.phone,
-      lastUpdated: new Date().toISOString(),
-    };
-  } else {
-    updatedProfile = {
-      plate: cleanPlate,
-      fullName: fullName || 'Müşteri',
-      phone: phone || '',
-      stamps: clamped,
-      history: [],
-      lastUpdated: new Date().toISOString(),
-    };
-  }
+  runtimeLoyalty = [newProfile, ...runtimeLoyalty.filter((p) => p.plate.toUpperCase().trim() !== clean)];
 
-  const updated = [
-    updatedProfile,
-    ...profiles.filter((p) => p.plate !== cleanPlate),
-  ];
-
-  localStorage.setItem(LOYALTY_PROFILES_KEY, JSON.stringify(updated));
-  dispatchDataSync();
-  return updatedProfile;
+  saveLoyaltyStampSQL(clean, fullName, phone, stamps).catch(() => {});
+  notifyDataChanged();
 }
 
 export function redeemGiftStamp(plate: string): LoyaltyCustomerProfile | null {
-  const cleanPlate = plate.toUpperCase().trim();
-  const profiles = getLoyaltyProfiles();
-  const existing = profiles.find((p) => p.plate === cleanPlate);
+  const clean = plate.toUpperCase().trim();
+  const existing = runtimeLoyalty.find((p) => p.plate.toUpperCase().trim() === clean);
   if (!existing) return null;
 
-  const updatedProfile: LoyaltyCustomerProfile = {
+  const updated: LoyaltyCustomerProfile = {
     ...existing,
-    stamps: 0, // Reset for next cycle of 5 stamps
+    stamps: 0,
+    voucherCode: undefined,
+    voucherRedeemedAt: new Date().toISOString(),
     lastUpdated: new Date().toISOString(),
-    history: [
-      {
-        id: `redeem-${Date.now()}`,
-        appointmentId: 'gift-redeemed',
-        date: new Date().toISOString().split('T')[0],
-        awardedAt: new Date().toISOString(),
-        serviceNames: ['🎁 5/5 Hediye Cilalı Yıkama Kullanıldı'],
-        note: 'Hediye yıkama hakkı teslim edildi, kart sıfırlandı.',
-      },
-      ...(existing.history || []),
-    ],
   };
 
-  const updated = [
-    updatedProfile,
-    ...profiles.filter((p) => p.plate !== cleanPlate),
-  ];
+  runtimeLoyalty = [updated, ...runtimeLoyalty.filter((p) => p.plate.toUpperCase().trim() !== clean)];
 
-  localStorage.setItem(LOYALTY_PROFILES_KEY, JSON.stringify(updated));
-  dispatchDataSync();
-  return updatedProfile;
+  redeemVoucherSQL(clean).catch(() => {});
+  notifyDataChanged();
+  return updated;
 }
 
-// Map helper for quick plate -> stamps lookup
 export function getCustomerStampsMap(): Record<string, number> {
-  const profiles = getLoyaltyProfiles();
   const map: Record<string, number> = {};
-  for (const p of profiles) {
-    map[p.plate] = p.stamps;
+  for (const p of runtimeLoyalty) {
+    map[p.plate.toUpperCase().trim()] = p.stamps;
   }
   return map;
 }
@@ -595,24 +399,17 @@ export function updateCustomerStamps(key: string, stamps: number): void {
 }
 
 // ----------------------------------------------------
-// SAVED CUSTOMER PROFILE
+// SAVED CUSTOMER PROFILE (D1-backed)
 // ----------------------------------------------------
 
 export function getSavedCustomerProfile(): CustomerFormData | null {
-  try {
-    const raw = localStorage.getItem(CUSTOMER_PROFILE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+  return runtimeCustomerProfile;
 }
 
 export function saveCustomerProfile(data: CustomerFormData): void {
-  try {
-    localStorage.setItem(CUSTOMER_PROFILE_KEY, JSON.stringify(data));
-  } catch (e) {
-    console.error('Failed to save profile', e);
-  }
+  runtimeCustomerProfile = data;
+  saveCustomerSQL(data).catch(() => {});
+  notifyDataChanged();
 }
 
 export function getBusinessConfig(): BusinessConfig {
@@ -620,7 +417,7 @@ export function getBusinessConfig(): BusinessConfig {
 }
 
 // ----------------------------------------------------
-// LIVE WASH STAGES TRACKER (Feature 1)
+// LIVE WASH STAGES TRACKER
 // ----------------------------------------------------
 
 export const WASH_STAGE_LABELS: Record<WashStage, { name: string; desc: string; percent: number; icon: string }> = {
@@ -633,83 +430,67 @@ export const WASH_STAGE_LABELS: Record<WashStage, { name: string; desc: string; 
 };
 
 export function updateWashStage(appointmentId: string, stage: WashStage): AppointmentData | null {
-  try {
-    const list = getAllStoredAppointments();
-    const apt = list.find((a) => a.id === appointmentId);
-    if (!apt) return null;
+  const apt = runtimeAppointments.find((a) => a.id === appointmentId);
+  if (!apt) return null;
 
-    const stageInfo = WASH_STAGE_LABELS[stage];
-    const stageUpdatedAt = new Date().toISOString();
+  const stageInfo = WASH_STAGE_LABELS[stage];
+  const stageUpdatedAt = new Date().toISOString();
 
-    const updated = list.map((a) => {
-      if (a.id === appointmentId) {
-        return {
-          ...a,
-          washStage: stage,
-          stageUpdatedAt,
-          status: stage === 'ready_for_pickup' ? 'confirmed' : 'in_progress',
-        };
-      }
-      return a;
-    });
+  const updated: AppointmentData = {
+    ...apt,
+    washStage: stage,
+    stageUpdatedAt,
+    status: stage === 'ready_for_pickup' ? 'confirmed' : 'in_progress',
+  };
 
-    localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(updated));
+  runtimeAppointments = runtimeAppointments.map((a) => (a.id === appointmentId ? updated : a));
 
-    // Log & push notification to customer
-    logSystemEvent({
-      type: 'in_progress',
-      title: `${stageInfo.icon} ${stageInfo.name} (${apt.customer.plateNumber})`,
-      message: `Sn. ${apt.customer.fullName}, ${apt.customer.plateNumber} aracınızın işlemi: ${stageInfo.desc}`,
-      appointmentId: apt.id,
-      plate: apt.customer.plateNumber,
-      customerName: apt.customer.fullName,
-    });
+  updateWashStageSQL(appointmentId, stage).catch(() => {});
 
-    dispatchDataSync();
-    return { ...apt, washStage: stage, stageUpdatedAt };
-  } catch (e) {
-    console.error('Failed to update wash stage', e);
-    return null;
-  }
+  logSystemEvent({
+    type: 'in_progress',
+    title: `${stageInfo.icon} ${stageInfo.name} (${apt.customer.plateNumber})`,
+    message: `Sn. ${apt.customer.fullName}, ${apt.customer.plateNumber} aracınızın işlemi: ${stageInfo.desc}`,
+    appointmentId: apt.id,
+    plate: apt.customer.plateNumber,
+    customerName: apt.customer.fullName,
+  });
+
+  notifyDataChanged();
+  return updated;
 }
 
 // ----------------------------------------------------
-// VEHICLE INSPECTION PHOTOS (Feature 3)
+// VEHICLE INSPECTION PHOTOS (D1-backed)
 // ----------------------------------------------------
 
-export function addInspectionPhoto(appointmentId: string, photo: Omit<VehicleInspectionPhoto, 'id' | 'takenAt'>): VehicleInspectionPhoto | null {
-  try {
-    const list = getAllStoredAppointments();
-    const apt = list.find((a) => a.id === appointmentId);
-    if (!apt) return null;
+export function addInspectionPhoto(
+  appointmentId: string,
+  photo: Omit<VehicleInspectionPhoto, 'id' | 'takenAt'>
+): VehicleInspectionPhoto | null {
+  const apt = runtimeAppointments.find((a) => a.id === appointmentId);
+  if (!apt) return null;
 
-    const newPhoto: VehicleInspectionPhoto = {
-      id: `photo-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      takenAt: new Date().toISOString(),
-      ...photo,
-    };
+  const newPhoto: VehicleInspectionPhoto = {
+    id: `photo-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    takenAt: new Date().toISOString(),
+    ...photo,
+  };
 
-    const updated = list.map((a) => {
-      if (a.id === appointmentId) {
-        return {
-          ...a,
-          photos: [...(a.photos || []), newPhoto],
-        };
-      }
-      return a;
-    });
+  const updated: AppointmentData = {
+    ...apt,
+    photos: [...(apt.photos || []), newPhoto],
+  };
 
-    localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(updated));
-    dispatchDataSync();
-    return newPhoto;
-  } catch (e) {
-    console.error('Failed to add inspection photo', e);
-    return null;
-  }
+  runtimeAppointments = runtimeAppointments.map((a) => (a.id === appointmentId ? updated : a));
+
+  addInspectionPhotoSQL(appointmentId, photo).catch(() => {});
+  notifyDataChanged();
+  return newPhoto;
 }
 
 // ----------------------------------------------------
-// VIP AUTO-LOOKUP BY PLATE (Feature 4)
+// VIP AUTO-LOOKUP BY PLATE
 // ----------------------------------------------------
 
 export function findCustomerHistoryByPlate(plateInput: string): { 
@@ -722,18 +503,17 @@ export function findCustomerHistoryByPlate(plateInput: string): {
     return { customer: null, lastAppointment: null, loyaltyProfile: null };
   }
 
-  const allApts = getAllStoredAppointments();
-  const matchApt = allApts.find(
+  const matchApt = runtimeAppointments.find(
     (a) => a.customer.plateNumber.toUpperCase().replace(/\s+/g, '') === clean
   );
 
-  const profiles = getLoyaltyProfiles();
-  const matchProfile = profiles.find(
+  const matchProfile = runtimeLoyalty.find(
     (p) => p.plate.toUpperCase().replace(/\s+/g, '') === clean
   ) || null;
 
-  const saved = getSavedCustomerProfile();
-  const matchSaved = saved && saved.plateNumber.toUpperCase().replace(/\s+/g, '') === clean ? saved : null;
+  const matchSaved = runtimeCustomerProfile && runtimeCustomerProfile.plateNumber.toUpperCase().replace(/\s+/g, '') === clean
+    ? runtimeCustomerProfile
+    : null;
 
   const customer = matchApt?.customer || matchSaved || (matchProfile ? {
     fullName: matchProfile.fullName,
@@ -750,13 +530,12 @@ export function findCustomerHistoryByPlate(plateInput: string): {
 }
 
 // ----------------------------------------------------
-// QR LOYALTY VOUCHER CODE (Feature 6)
+// QR LOYALTY VOUCHER CODE
 // ----------------------------------------------------
 
 export function getOrCreateVoucherForPlate(plate: string): string {
   const clean = plate.toUpperCase().trim();
-  const profiles = getLoyaltyProfiles();
-  const profile = profiles.find((p) => p.plate === clean);
+  const profile = runtimeLoyalty.find((p) => p.plate.toUpperCase().trim() === clean);
 
   if (profile?.voucherCode) {
     return profile.voucherCode;
@@ -765,17 +544,16 @@ export function getOrCreateVoucherForPlate(plate: string): string {
   const newCode = `ESSE-VIP-${Math.floor(1000 + Math.random() * 9000)}`;
   if (profile) {
     profile.voucherCode = newCode;
-    localStorage.setItem(LOYALTY_PROFILES_KEY, JSON.stringify(profiles));
-    dispatchDataSync();
+    saveLoyaltyStampSQL(clean, profile.fullName, profile.phone, profile.stamps).catch(() => {});
+    notifyDataChanged();
   }
   return newCode;
 }
 
 export function redeemVoucherCode(codeOrPlate: string): { success: boolean; message: string; profile?: LoyaltyCustomerProfile } {
   const clean = codeOrPlate.toUpperCase().trim();
-  const profiles = getLoyaltyProfiles();
-  const profile = profiles.find(
-    (p) => p.voucherCode?.toUpperCase() === clean || p.plate === clean
+  const profile = runtimeLoyalty.find(
+    (p) => p.voucherCode?.toUpperCase() === clean || p.plate.toUpperCase().trim() === clean
   );
 
   if (!profile) {

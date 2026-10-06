@@ -4,6 +4,7 @@ import { User, Phone, Mail, FileText, ChevronLeft, ChevronRight, AlertCircle, Ch
 import { CustomerFormData } from '../types';
 import { formatPlate } from '../utils/formatters';
 import { findCustomerHistoryByPlate } from '../utils/storage';
+import { saveCustomerSQL } from '../services/db';
 
 interface Step3CustomerInfoProps {
   formData: CustomerFormData;
@@ -64,14 +65,7 @@ export const Step3CustomerInfo: React.FC<Step3CustomerInfoProps> = ({
 }) => {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [rememberMe, setRememberMe] = useState<boolean>(true);
-  const [savedProfile, setSavedProfile] = useState<CustomerFormData | null>(() => {
-    try {
-      const stored = localStorage.getItem('esse_saved_customer');
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [savedProfile, setSavedProfile] = useState<CustomerFormData | null>(null);
 
   const [vipMatch, setVipMatch] = useState<{ fullName: string; carModel?: string; stamps?: number } | null>(null);
 
@@ -175,11 +169,10 @@ export const Step3CustomerInfo: React.FC<Step3CustomerInfoProps> = ({
     }
 
     if (rememberMe) {
-      try {
-        localStorage.setItem('esse_saved_customer', JSON.stringify(formData));
-      } catch (err) {
-        console.warn('LocalStorage error:', err);
-      }
+      // Persist customer record strictly to Cloudflare D1
+      saveCustomerSQL(formData).catch((err) => {
+        console.warn('D1 customer save error:', err);
+      });
     }
 
     onNext();

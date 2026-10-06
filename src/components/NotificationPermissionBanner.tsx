@@ -12,9 +12,7 @@ interface NotificationPermissionBannerProps {
 
 export const NotificationPermissionBanner: React.FC<NotificationPermissionBannerProps> = ({ isDarkMode }) => {
   const [permission, setPermission] = useState<'granted' | 'denied' | 'default' | 'unsupported'>('default');
-  const [dismissed, setDismissed] = useState<boolean>(() => {
-    return localStorage.getItem('esse_notif_banner_dismissed') === 'true';
-  });
+  const [dismissed, setDismissed] = useState<boolean>(false);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [showDeniedInfo, setShowDeniedInfo] = useState(false);
 
@@ -37,7 +35,6 @@ export const NotificationPermissionBanner: React.FC<NotificationPermissionBanner
 
   const handleDismiss = () => {
     setDismissed(true);
-    localStorage.setItem('esse_notif_banner_dismissed', 'true');
   };
 
   // If already granted, show only temporary success toast if just activated

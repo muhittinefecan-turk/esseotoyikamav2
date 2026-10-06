@@ -1,10 +1,11 @@
 /**
  * Cloudflare D1 SQL Core Database Service
  * 
- * Implements standard SQL D1 API for Cloudflare Workers & React Client:
- * - Initializes D1 binding from environment (env.DB, globalThis.DB, process.env.DB, or HTTP client)
- * - Implements automated table schema check on startup (appointments, customers, loyalty)
- * - Provides high-performance SQL fetch/exec patterns replacing localStorage for all CRUD operations
+ * Exclusively powered by Cloudflare D1 Storage:
+ * - Direct asynchronous SQL execution using prepared statements
+ * - Zero localStorage / sessionStorage / mock data dependencies
+ * - Complete CRUD for appointments, customers, loyalty, and system events
+ * - Real-time metrics calculation for "Gün Sonu Raporu" & "İşletme Analitiği"
  */
 
 import {
@@ -14,6 +15,7 @@ import {
   VehicleInspectionPhoto,
   WashStage,
 } from '../types';
+import { setupD1DatabaseSchema, resetD1DatabaseClean } from './db-setup';
 
 export const API_BASE = '/api';
 
@@ -63,8 +65,35 @@ export interface D1HealthStatus {
   serverTime: string;
 }
 
+export interface DailySummaryMetrics {
+  todayStr: string;
+  totalToday: number;
+  completedTodayCount: number;
+  activeTodayCount: number;
+  cancelledTodayCount: number;
+  estimatedDailyRevenue: number;
+  averageWashMinutes: number;
+  loyaltyGiftEligibleCount: number;
+  popularServices: { name: string; count: number; share: string }[];
+  peronOccupancy: { peronNumber: number; peron: string; count: string; rate: string }[];
+}
+
+export interface BusinessAnalyticsMetrics {
+  totalAppointments: number;
+  totalCompleted: number;
+  totalCancelled: number;
+  totalCustomers: number;
+  totalRevenue: number;
+  averageWashMinutes: number;
+  loyaltyMembersCount: number;
+  loyaltyVouchersReadyCount: number;
+  popularServices: { name: string; count: number; share: string }[];
+  vehicleDistribution: { type: string; label: string; count: number; share: string }[];
+  recentActivity: AppointmentData[];
+}
+
 // ============================================================================
-// 2. HTTP D1 IMPLEMENTATION (For browser client querying server / edge D1 API)
+// 2. HTTP D1 IMPLEMENTATION (Prepared statements over Worker/API)
 // ============================================================================
 
 class HttpD1PreparedStatement implements D1PreparedStatement {
@@ -159,14 +188,6 @@ class HttpD1Database implements D1Database {
 
 let currentD1: D1Database | null = null;
 
-/**
- * Initializes the Cloudflare D1 database binding from the current execution environment.
- * Correctly detects:
- * 1. env.DB passed from Cloudflare Worker fetch(request, env)
- * 2. globalThis.DB or globalThis.env.DB
- * 3. Node process.env.DB
- * 4. Falls back to HttpD1Database in browser
- */
 export function initD1Binding(env?: any): D1Database {
   if (env?.DB) {
     currentD1 = env.DB;
@@ -201,226 +222,93 @@ export function getD1(): D1Database {
 }
 
 // ============================================================================
-// 4. D1 SQL SCHEMA DEFINITION & STARTUP TABLE CHECK (appointments, customers, loyalty)
+// 4. DATA MAPPING HELPERS
 // ============================================================================
 
-export const D1_SCHEMA_SQL = `
-CREATE TABLE IF NOT EXISTS appointments (
-  id TEXT PRIMARY KEY,
-  created_at TEXT NOT NULL,
-  vehicle_type TEXT NOT NULL DEFAULT 'sedan',
-  selected_services TEXT NOT NULL,
-  date TEXT NOT NULL,
-  time TEXT NOT NULL,
-  total_duration_minutes INTEGER NOT NULL DEFAULT 45,
-  customer_full_name TEXT NOT NULL,
-  customer_phone TEXT NOT NULL,
-  customer_plate_number TEXT NOT NULL,
-  customer_car_model TEXT,
-  customer_notes TEXT,
-  customer_email TEXT,
-  status TEXT NOT NULL DEFAULT 'confirmed',
-  wash_stage TEXT DEFAULT 'queue',
-  stage_updated_at TEXT,
-  admin_notes TEXT,
-  cancelled_by TEXT,
-  cancelled_at TEXT,
-  cancellation_reason TEXT,
-  stamped_at TEXT,
-  photos TEXT,
-  estimated_price REAL DEFAULT 450.0
-);
+export function rowToAppointment(row: any): AppointmentData {
+  if (!row) return {} as any;
 
-CREATE TABLE IF NOT EXISTS customers (
-  plate_number TEXT PRIMARY KEY,
-  full_name TEXT NOT NULL,
-  phone TEXT NOT NULL,
-  email TEXT,
-  car_model TEXT,
-  last_visit TEXT,
-  total_visits INTEGER DEFAULT 1,
-  notes TEXT,
-  created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS loyalty (
-  plate TEXT PRIMARY KEY,
-  full_name TEXT NOT NULL,
-  phone TEXT NOT NULL,
-  stamps INTEGER NOT NULL DEFAULT 0,
-  voucher_code TEXT,
-  voucher_redeemed_at TEXT,
-  history TEXT NOT NULL DEFAULT '[]',
-  last_updated TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS loyalty_profiles (
-  plate TEXT PRIMARY KEY,
-  full_name TEXT NOT NULL,
-  phone TEXT NOT NULL,
-  stamps INTEGER NOT NULL DEFAULT 0,
-  voucher_code TEXT,
-  voucher_redeemed_at TEXT,
-  history TEXT NOT NULL DEFAULT '[]',
-  last_updated TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS system_notifications (
-  id TEXT PRIMARY KEY,
-  timestamp TEXT NOT NULL,
-  type TEXT NOT NULL,
-  title TEXT NOT NULL,
-  message TEXT NOT NULL,
-  appointment_id TEXT,
-  plate TEXT,
-  customer_name TEXT,
-  is_read INTEGER DEFAULT 0
-);
-
-CREATE INDEX IF NOT EXISTS idx_appointments_plate ON appointments(customer_plate_number);
-CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(date);
-CREATE INDEX IF NOT EXISTS idx_loyalty_voucher ON loyalty(voucher_code);
-`;
-
-/**
- * Startup Table Schema Check:
- * Verifies that the 3 required tables (appointments, customers, loyalty) exist.
- * If any table is missing, automatically creates and initializes them with the standard D1 SQL schema.
- */
-export async function checkAndInitializeSchema(force: boolean = false): Promise<{
-  verified: boolean;
-  tables: string[];
-  message: string;
-}> {
-  const d1 = getD1();
-  const requiredTables = ['appointments', 'customers', 'loyalty'];
-
+  let selectedServices: any[] = [];
   try {
-    if (!force) {
-      // 1. Query sqlite_master for table existence
-      const res = await d1.prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('appointments', 'customers', 'loyalty');"
-      ).all<{ name: string }>();
-
-      const found = new Set((res.results || []).map((t) => t.name));
-      const hasAll = requiredTables.every((tbl) => found.has(tbl));
-
-      if (hasAll) {
-        return {
-          verified: true,
-          tables: requiredTables,
-          message: 'Cloudflare D1 tabloları (appointments, customers, loyalty) aktif ve doğrulandı.',
-        };
-      }
+    if (typeof row.selected_services === 'string') {
+      selectedServices = JSON.parse(row.selected_services);
+    } else if (Array.isArray(row.selectedServices)) {
+      selectedServices = row.selectedServices;
+    } else if (Array.isArray(row.selected_services)) {
+      selectedServices = row.selected_services;
     }
-
-    // 2. Initialize or repair missing tables
-    await d1.exec(D1_SCHEMA_SQL);
-
-    // Call server setup endpoint to ensure backend tables match
-    await fetch(`${API_BASE}/d1/init`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ force: true, sql: D1_SCHEMA_SQL }),
-    }).catch(() => {});
-
-    return {
-      verified: true,
-      tables: requiredTables,
-      message: 'Cloudflare D1 SQL tabloları başarıyla oluşturuldu ve doğrulandı.',
-    };
-  } catch (err: any) {
-    console.warn('checkAndInitializeSchema warning:', err);
-    try {
-      await d1.exec(D1_SCHEMA_SQL);
-      return {
-        verified: true,
-        tables: requiredTables,
-        message: 'Cloudflare D1 şeması otomatik olarak hazırlandı.',
-      };
-    } catch (e: any) {
-      return {
-        verified: false,
-        tables: requiredTables,
-        message: 'D1 şema kontrolü: ' + e.message,
-      };
-    }
+  } catch {
+    selectedServices = Array.isArray(row.selectedServices) ? row.selectedServices : [];
   }
+
+  let photos: VehicleInspectionPhoto[] = [];
+  try {
+    if (typeof row.photos === 'string') {
+      photos = JSON.parse(row.photos);
+    } else if (Array.isArray(row.photos)) {
+      photos = row.photos;
+    }
+  } catch {
+    photos = [];
+  }
+
+  const custObj = (row.customer && typeof row.customer === 'object') ? row.customer : {};
+
+  const fullName = custObj.fullName || custObj.name || row.customer_full_name || row.customerName || '';
+  const phone = custObj.phone || row.customer_phone || row.phone || '';
+  const plateNumber = (custObj.plateNumber || custObj.plate || row.customer_plate_number || row.plate || '').toUpperCase().trim();
+  const carModel = custObj.carModel || row.customer_car_model || row.carModel || '';
+  const email = custObj.email || row.customer_email || row.email || '';
+  const notes = custObj.notes || row.customer_notes || row.notes || '';
+
+  return {
+    id: String(row.id || ''),
+    createdAt: row.createdAt || row.created_at || new Date().toISOString(),
+    vehicleType: row.vehicleType || row.vehicle_type || 'sedan',
+    selectedServices,
+    date: row.date,
+    time: row.time,
+    totalDurationMinutes: Number(row.totalDurationMinutes || row.total_duration_minutes) || 45,
+    customer: {
+      fullName,
+      phone,
+      plateNumber,
+      carModel,
+      email,
+      notes,
+    },
+    status: row.status || 'confirmed',
+    washStage: row.washStage || row.wash_stage || 'queue',
+    stageUpdatedAt: row.stageUpdatedAt || row.stage_updated_at || undefined,
+    adminNotes: row.adminNotes || row.admin_notes || undefined,
+    cancelledBy: row.cancelledBy || row.cancelled_by || undefined,
+    cancelledAt: row.cancelledAt || row.cancelled_at || undefined,
+    cancellationReason: row.cancellationReason || row.cancellation_reason || undefined,
+    stampedAt: row.stampedAt || row.stamped_at || undefined,
+    photos,
+  };
 }
 
-// ============================================================================
-// 5. SQL FETCH / EXEC PATTERNS: APPOINTMENTS
-// ============================================================================
-
-function notifyDataChanged() {
+export function notifyDataChanged(): void {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('esse_data_updated'));
   }
 }
 
-function rowToAppointment(row: any): AppointmentData {
-  let selectedServices: any[] = [];
-  try {
-    selectedServices = typeof row.selected_services === 'string'
-      ? JSON.parse(row.selected_services)
-      : (row.selected_services || []);
-  } catch {
-    selectedServices = [];
-  }
-
-  let photos: VehicleInspectionPhoto[] = [];
-  try {
-    photos = typeof row.photos === 'string'
-      ? JSON.parse(row.photos)
-      : (row.photos || []);
-  } catch {
-    photos = [];
-  }
-
-  return {
-    id: row.id,
-    createdAt: row.created_at || new Date().toISOString(),
-    vehicleType: row.vehicle_type || 'sedan',
-    selectedServices,
-    date: row.date,
-    time: row.time,
-    totalDurationMinutes: Number(row.total_duration_minutes) || 45,
-    customer: {
-      fullName: row.customer_full_name || '',
-      phone: row.customer_phone || '',
-      plateNumber: row.customer_plate_number || '',
-      carModel: row.customer_car_model || '',
-      email: row.customer_email || '',
-      notes: row.customer_notes || '',
-    },
-    status: row.status || 'confirmed',
-    washStage: row.wash_stage || 'queue',
-    stageUpdatedAt: row.stage_updated_at,
-    adminNotes: row.admin_notes,
-    cancelledBy: row.cancelled_by,
-    cancelledAt: row.cancelled_at,
-    cancellationReason: row.cancellation_reason,
-    stampedAt: row.stamped_at,
-    photos,
-  };
-}
+// ============================================================================
+// 5. APPOINTMENTS (Cloudflare D1 SQL)
+// ============================================================================
 
 /**
- * Fetches all appointments from Cloudflare D1 using SQL SELECT
+ * Fetches all appointments directly from Cloudflare D1.
+ * Returns empty array if no appointments exist (no fake mock rows).
  */
 export async function fetchAppointmentsSQL(): Promise<AppointmentData[]> {
   try {
     const d1 = getD1();
     const res = await d1.prepare('SELECT * FROM appointments ORDER BY created_at DESC;').all();
-    if (res.results && res.results.length > 0) {
+    if (res.results) {
       return res.results.map(rowToAppointment);
-    }
-
-    // Direct REST API fetch as fallback
-    const apiRes = await fetch(`${API_BASE}/appointments`);
-    if (apiRes.ok) {
-      const data = await apiRes.json();
-      if (Array.isArray(data)) return data;
     }
   } catch (err) {
     console.warn('fetchAppointmentsSQL notice:', err);
@@ -429,15 +317,26 @@ export async function fetchAppointmentsSQL(): Promise<AppointmentData[]> {
 }
 
 /**
- * Fetches active appointments (excludes cancelled & completed)
+ * Fetches active appointments (excludes cancelled & completed) directly from D1.
  */
 export async function fetchActiveAppointmentsSQL(): Promise<AppointmentData[]> {
-  const all = await fetchAppointmentsSQL();
-  return all.filter((a) => a.status !== 'cancelled' && a.status !== 'completed');
+  try {
+    const d1 = getD1();
+    const res = await d1.prepare(
+      "SELECT * FROM appointments WHERE status NOT IN ('cancelled', 'completed') ORDER BY date ASC, time ASC;"
+    ).all();
+    if (res.results) {
+      return res.results.map(rowToAppointment);
+    }
+  } catch {
+    const all = await fetchAppointmentsSQL();
+    return all.filter((a) => a.status !== 'cancelled' && a.status !== 'completed');
+  }
+  return [];
 }
 
 /**
- * Inserts or replaces an appointment using standard SQL INSERT
+ * Inserts or updates an appointment in Cloudflare D1 using prepared statement.
  */
 export async function insertAppointmentSQL(
   apt: AppointmentData,
@@ -448,6 +347,8 @@ export async function insertAppointmentSQL(
   if (reschedulingOldId) {
     await deleteAppointmentSQL(reschedulingOldId);
   }
+
+  const cleanPlate = (apt.customer.plateNumber || '').toUpperCase().trim();
 
   await d1.prepare(`
     INSERT OR REPLACE INTO appointments (
@@ -467,7 +368,7 @@ export async function insertAppointmentSQL(
     apt.totalDurationMinutes || 45,
     apt.customer.fullName,
     apt.customer.phone,
-    (apt.customer.plateNumber || '').toUpperCase().trim(),
+    cleanPlate,
     apt.customer.carModel || '',
     apt.customer.notes || '',
     apt.customer.email || '',
@@ -482,7 +383,7 @@ export async function insertAppointmentSQL(
     JSON.stringify(apt.photos || [])
   ).run();
 
-  // Also upsert customer in the customers table
+  // Also upsert customer profile in customers table
   await saveCustomerSQL(apt.customer);
 
   notifyDataChanged();
@@ -490,7 +391,7 @@ export async function insertAppointmentSQL(
 }
 
 /**
- * Updates appointment status using SQL UPDATE
+ * Updates appointment status using SQL UPDATE in D1.
  */
 export async function updateAppointmentStatusSQL(
   id: string,
@@ -509,7 +410,7 @@ export async function updateAppointmentStatusSQL(
 }
 
 /**
- * Updates vehicle wash stage in SQL
+ * Updates vehicle wash stage in SQL in D1.
  */
 export async function updateWashStageSQL(id: string, washStage: WashStage): Promise<void> {
   const d1 = getD1();
@@ -524,7 +425,7 @@ export async function updateWashStageSQL(id: string, washStage: WashStage): Prom
 }
 
 /**
- * Cancels an appointment in SQL
+ * Cancels an appointment in D1 with audit details.
  */
 export async function cancelAppointmentSQL(
   id: string,
@@ -543,7 +444,7 @@ export async function cancelAppointmentSQL(
 }
 
 /**
- * Reactivates a cancelled appointment in SQL
+ * Reactivates a cancelled appointment in D1.
  */
 export async function reactivateAppointmentSQL(id: string): Promise<void> {
   const d1 = getD1();
@@ -557,7 +458,7 @@ export async function reactivateAppointmentSQL(id: string): Promise<void> {
 }
 
 /**
- * Permanently deletes an appointment from SQL
+ * Permanently deletes an appointment from D1.
  */
 export async function deleteAppointmentSQL(id: string): Promise<boolean> {
   const d1 = getD1();
@@ -567,7 +468,7 @@ export async function deleteAppointmentSQL(id: string): Promise<boolean> {
 }
 
 /**
- * Adds an inspection photo to an appointment
+ * Adds an inspection photo to an appointment in D1.
  */
 export async function addInspectionPhotoSQL(
   appointmentId: string,
@@ -598,20 +499,44 @@ export async function addInspectionPhotoSQL(
 }
 
 // ============================================================================
-// 6. SQL FETCH / EXEC PATTERNS: CUSTOMERS
+// 6. CUSTOMERS (Cloudflare D1 SQL)
 // ============================================================================
 
 /**
- * Fetches customer profile by plate number or phone using SQL SELECT
+ * Fetches all customer records from D1.
+ */
+export async function fetchCustomersSQL(): Promise<CustomerFormData[]> {
+  try {
+    const d1 = getD1();
+    const res = await d1.prepare('SELECT * FROM customers ORDER BY last_visit DESC;').all<any>();
+    if (res.results) {
+      return res.results.map((r) => ({
+        fullName: r.full_name,
+        phone: r.phone,
+        email: r.email || '',
+        plateNumber: r.plate_number,
+        carModel: r.car_model || '',
+        notes: r.notes || '',
+      }));
+    }
+  } catch (err) {
+    console.warn('fetchCustomersSQL notice:', err);
+  }
+  return [];
+}
+
+/**
+ * Fetches customer profile by plate number or phone using SQL SELECT in D1.
  */
 export async function fetchCustomerSQL(query?: string): Promise<CustomerFormData | null> {
   const d1 = getD1();
 
   if (query) {
-    const q = `%${query.trim().toUpperCase()}%`;
+    const clean = query.trim().toUpperCase();
+    const qLike = `%${clean}%`;
     const res = await d1.prepare(
-      'SELECT * FROM customers WHERE UPPER(plate_number) LIKE ? OR phone LIKE ? LIMIT 1;'
-    ).bind(q, q).first<any>();
+      'SELECT * FROM customers WHERE UPPER(plate_number) = ? OR UPPER(plate_number) LIKE ? OR phone LIKE ? LIMIT 1;'
+    ).bind(clean, qLike, qLike).first<any>();
 
     if (res) {
       return {
@@ -642,7 +567,7 @@ export async function fetchCustomerSQL(query?: string): Promise<CustomerFormData
 }
 
 /**
- * Upserts customer profile in customers SQL table
+ * Upserts customer profile in customers SQL table in D1.
  */
 export async function saveCustomerSQL(customer: CustomerFormData): Promise<void> {
   if (!customer.plateNumber && !customer.fullName) return;
@@ -673,54 +598,48 @@ export async function saveCustomerSQL(customer: CustomerFormData): Promise<void>
   ).run();
 }
 
+/**
+ * Deletes a customer by plate number from D1.
+ */
+export async function deleteCustomerSQL(plate: string): Promise<boolean> {
+  const d1 = getD1();
+  const cleanPlate = plate.toUpperCase().trim();
+  const res = await d1.prepare('DELETE FROM customers WHERE plate_number = ?;').bind(cleanPlate).run();
+  notifyDataChanged();
+  return res.success;
+}
+
 // ============================================================================
-// 7. SQL FETCH / EXEC PATTERNS: LOYALTY (loyalty & loyalty_profiles)
+// 7. LOYALTY (Cloudflare D1 SQL)
 // ============================================================================
 
 /**
- * Fetches all loyalty customer profiles from Cloudflare D1 using SQL SELECT
+ * Fetches all loyalty customer profiles from Cloudflare D1 using SQL SELECT.
  */
 export async function fetchLoyaltyProfilesSQL(): Promise<LoyaltyCustomerProfile[]> {
   try {
     const d1 = getD1();
-    // Try loyalty table, fallback to loyalty_profiles
-    const res = await d1.prepare('SELECT * FROM loyalty ORDER BY last_updated DESC;').all<any>();
-    const rows = res.results && res.results.length > 0 ? res.results : [];
+    const res = await d1.prepare('SELECT * FROM loyalty_profiles ORDER BY last_updated DESC;').all<any>();
+    const rows = res.results || [];
 
-    if (rows.length === 0) {
-      const fallbackRes = await d1.prepare('SELECT * FROM loyalty_profiles ORDER BY last_updated DESC;').all<any>();
-      if (fallbackRes.results && fallbackRes.results.length > 0) {
-        rows.push(...fallbackRes.results);
+    return rows.map((r) => {
+      let history: any[] = [];
+      try {
+        history = typeof r.history === 'string' ? JSON.parse(r.history) : (r.history || []);
+      } catch {
+        history = [];
       }
-    }
-
-    if (rows.length > 0) {
-      return rows.map((r) => {
-        let history: any[] = [];
-        try {
-          history = typeof r.history === 'string' ? JSON.parse(r.history) : (r.history || []);
-        } catch {
-          history = [];
-        }
-        return {
-          plate: r.plate,
-          fullName: r.full_name,
-          phone: r.phone,
-          stamps: Number(r.stamps) || 0,
-          voucherCode: r.voucher_code || undefined,
-          voucherRedeemedAt: r.voucher_redeemed_at || undefined,
-          history,
-          lastUpdated: r.last_updated || new Date().toISOString(),
-        };
-      });
-    }
-
-    // Direct REST API fetch as fallback
-    const apiRes = await fetch(`${API_BASE}/loyalty`);
-    if (apiRes.ok) {
-      const data = await apiRes.json();
-      if (Array.isArray(data)) return data;
-    }
+      return {
+        plate: r.plate,
+        fullName: r.full_name,
+        phone: r.phone,
+        stamps: Number(r.stamps) || 0,
+        voucherCode: r.voucher_code || undefined,
+        voucherRedeemedAt: r.voucher_redeemed_at || undefined,
+        history,
+        lastUpdated: r.last_updated || new Date().toISOString(),
+      };
+    });
   } catch (err) {
     console.warn('fetchLoyaltyProfilesSQL notice:', err);
   }
@@ -728,7 +647,7 @@ export async function fetchLoyaltyProfilesSQL(): Promise<LoyaltyCustomerProfile[
 }
 
 /**
- * Saves or updates stamps for a customer in loyalty table using SQL
+ * Saves or updates stamps for a customer in loyalty table in D1.
  */
 export async function saveLoyaltyStampSQL(
   plate: string,
@@ -757,18 +676,6 @@ export async function saveLoyaltyStampSQL(
   const voucherCode = stamps >= 5 ? `ESSE-VIP-${Math.floor(1000 + Math.random() * 9000)}` : null;
 
   await d1.prepare(`
-    INSERT INTO loyalty (plate, full_name, phone, stamps, voucher_code, last_updated)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(plate) DO UPDATE SET
-      full_name = CASE WHEN excluded.full_name <> '' THEN excluded.full_name ELSE loyalty.full_name END,
-      phone = CASE WHEN excluded.phone <> '' THEN excluded.phone ELSE loyalty.phone END,
-      stamps = excluded.stamps,
-      voucher_code = COALESCE(excluded.voucher_code, loyalty.voucher_code),
-      last_updated = excluded.last_updated;
-  `).bind(cleanPlate, fullName, phone, stamps, voucherCode, now).run();
-
-  // Also mirror to loyalty_profiles
-  await d1.prepare(`
     INSERT INTO loyalty_profiles (plate, full_name, phone, stamps, voucher_code, last_updated)
     VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(plate) DO UPDATE SET
@@ -777,29 +684,31 @@ export async function saveLoyaltyStampSQL(
       stamps = excluded.stamps,
       voucher_code = COALESCE(excluded.voucher_code, loyalty_profiles.voucher_code),
       last_updated = excluded.last_updated;
-  `).bind(cleanPlate, fullName, phone, stamps, voucherCode, now).run().catch(() => {});
+  `).bind(cleanPlate, fullName, phone, stamps, voucherCode, now).run();
 
   notifyDataChanged();
 }
 
 /**
- * Completes an appointment and awards 1 loyalty stamp in SQL
+ * Completes an appointment and awards 1 loyalty stamp in D1.
  */
 export async function completeAndAwardStampSQL(appointmentId: string): Promise<{ stamps: number }> {
   const d1 = getD1();
   const apt = await d1.prepare('SELECT * FROM appointments WHERE id = ?;').bind(appointmentId).first<any>();
   if (!apt) return { stamps: 0 };
 
+  const now = new Date().toISOString();
+
   // 1. Update appointment status in SQL
-  await d1.prepare("UPDATE appointments SET status = 'completed' WHERE id = ?;").bind(appointmentId).run();
+  await d1.prepare("UPDATE appointments SET status = 'completed', stamped_at = ? WHERE id = ?;")
+    .bind(now, appointmentId)
+    .run();
 
   // 2. Fetch current stamps
   const plate = (apt.customer_plate_number || '').toUpperCase().trim();
-  const existing = await d1.prepare('SELECT * FROM loyalty WHERE plate = ?;').bind(plate).first<any>();
+  const existing = await d1.prepare('SELECT * FROM loyalty_profiles WHERE plate = ?;').bind(plate).first<any>();
   const currentStamps = (existing ? Number(existing.stamps) : 0) + 1;
   const newStamps = currentStamps > 5 ? 5 : currentStamps;
-  const now = new Date().toISOString();
-  const voucherCode = newStamps >= 5 ? (existing?.voucher_code || `ESSE-VIP-${Math.floor(1000 + Math.random() * 9000)}`) : null;
 
   await saveLoyaltyStampSQL(plate, apt.customer_full_name, apt.customer_phone, newStamps);
 
@@ -808,13 +717,13 @@ export async function completeAndAwardStampSQL(appointmentId: string): Promise<{
 }
 
 /**
- * Redeems a 5/5 VIP wash voucher in loyalty table
+ * Redeems a 5/5 VIP wash voucher in loyalty table in D1.
  */
 export async function redeemVoucherSQL(codeOrPlate: string): Promise<{ success: boolean; message: string }> {
   const d1 = getD1();
   const clean = codeOrPlate.toUpperCase().trim();
   const existing = await d1.prepare(
-    'SELECT * FROM loyalty WHERE plate = ? OR voucher_code = ? LIMIT 1;'
+    'SELECT * FROM loyalty_profiles WHERE plate = ? OR voucher_code = ? LIMIT 1;'
   ).bind(clean, clean).first<any>();
 
   if (!existing) {
@@ -823,16 +732,10 @@ export async function redeemVoucherSQL(codeOrPlate: string): Promise<{ success: 
 
   const now = new Date().toISOString();
   await d1.prepare(`
-    UPDATE loyalty
-    SET stamps = 0, voucher_code = NULL, voucher_redeemed_at = ?, last_updated = ?
-    WHERE plate = ?;
-  `).bind(now, now, existing.plate).run();
-
-  await d1.prepare(`
     UPDATE loyalty_profiles
     SET stamps = 0, voucher_code = NULL, voucher_redeemed_at = ?, last_updated = ?
     WHERE plate = ?;
-  `).bind(now, now, existing.plate).run().catch(() => {});
+  `).bind(now, now, existing.plate).run();
 
   notifyDataChanged();
   return {
@@ -842,8 +745,219 @@ export async function redeemVoucherSQL(codeOrPlate: string): Promise<{ success: 
 }
 
 // ============================================================================
-// 8. DIAGNOSTICS & RAW SQL QUERY EXECUTION
+// 7.5 REAL D1 SYSTEM NOTIFICATIONS (ZERO LOCALSTORAGE)
 // ============================================================================
+
+export async function fetchNotificationsSQL(): Promise<any[]> {
+  const d1 = getD1();
+  const res = await d1.prepare(
+    'SELECT * FROM system_notifications ORDER BY timestamp DESC LIMIT 80;'
+  ).all<any>();
+  return (res.results || []).map((row: any) => ({
+    id: row.id,
+    timestamp: row.timestamp,
+    type: row.type,
+    title: row.title,
+    message: row.message,
+    appointmentId: row.appointment_id || undefined,
+    plate: row.plate || undefined,
+    customerName: row.customer_name || undefined,
+    isRead: Boolean(row.is_read),
+  }));
+}
+
+export async function insertNotificationSQL(event: {
+  id: string;
+  timestamp: string;
+  type: string;
+  title: string;
+  message: string;
+  appointmentId?: string;
+  plate?: string;
+  customerName?: string;
+}): Promise<void> {
+  const d1 = getD1();
+  await d1.prepare(`
+    INSERT OR REPLACE INTO system_notifications (
+      id, timestamp, type, title, message, appointment_id, plate, customer_name, is_read
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0);
+  `).bind(
+    event.id,
+    event.timestamp,
+    event.type,
+    event.title,
+    event.message,
+    event.appointmentId || null,
+    event.plate || null,
+    event.customerName || null
+  ).run();
+}
+
+export async function clearNotificationsSQL(): Promise<void> {
+  const d1 = getD1();
+  await d1.prepare('DELETE FROM system_notifications;').run();
+}
+
+// ============================================================================
+// 8. REAL D1 ANALYTICS & GÜN SONU RAPORU
+// ============================================================================
+
+/**
+ * Calculates Gün Sonu Raporu ("Daily Summary") strictly from real D1 appointments.
+ * If D1 is empty, returns genuine 0s and empty lists (no demo data).
+ */
+export async function fetchDailySummarySQL(targetDate?: string): Promise<DailySummaryMetrics> {
+  const todayStr = targetDate || new Date().toISOString().split('T')[0];
+  const all = await fetchAppointmentsSQL();
+  const loyalty = await fetchLoyaltyProfilesSQL();
+
+  const dayApts = all.filter((a) => a.date === todayStr);
+  const completedToday = dayApts.filter((a) => a.status === 'completed');
+  const activeToday = dayApts.filter((a) => a.status !== 'cancelled');
+  const cancelledToday = dayApts.filter((a) => a.status === 'cancelled');
+
+  const estimatedRevenue = activeToday.reduce((sum, a) => {
+    const sCount = a.selectedServices?.length || 1;
+    return sum + (sCount * 450);
+  }, 0);
+
+  const popularServicesTally: Record<string, number> = {};
+  for (const a of dayApts.filter((x) => x.status !== 'cancelled')) {
+    for (const s of a.selectedServices || []) {
+      popularServicesTally[s.name] = (popularServicesTally[s.name] || 0) + 1;
+    }
+  }
+
+  const totalServices = Object.values(popularServicesTally).reduce((a, b) => a + b, 0) || 1;
+  const popularServices = Object.entries(popularServicesTally)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([name, count]) => ({
+      name,
+      count,
+      share: `${Math.round((count / totalServices) * 100)}%`,
+    }));
+
+  const peronOccupancy = [1, 2, 3, 4].map((pNum) => {
+    const count = activeToday.filter((a) => a.time.includes(`${pNum}. Peron`)).length;
+    return {
+      peronNumber: pNum,
+      peron: `${pNum}. Peron`,
+      count: `${count} Araç`,
+      rate: `%${Math.min(100, Math.round((count / 8) * 100))}`,
+    };
+  });
+
+  return {
+    todayStr,
+    totalToday: dayApts.length,
+    completedTodayCount: completedToday.length,
+    activeTodayCount: activeToday.length,
+    cancelledTodayCount: cancelledToday.length,
+    estimatedDailyRevenue: estimatedRevenue,
+    averageWashMinutes: completedToday.length > 0 ? 45 : 0,
+    loyaltyGiftEligibleCount: loyalty.filter((p) => p.stamps >= 5).length,
+    popularServices,
+    peronOccupancy,
+  };
+}
+
+/**
+ * Calculates İşletme Analitiği ("Business Analytics") strictly from real D1 storage.
+ * If D1 is empty, returns genuine 0s and empty lists.
+ */
+export async function fetchAnalyticsMetricsSQL(): Promise<BusinessAnalyticsMetrics> {
+  const all = await fetchAppointmentsSQL();
+  const customers = await fetchCustomersSQL();
+  const loyalty = await fetchLoyaltyProfilesSQL();
+
+  const completed = all.filter((a) => a.status === 'completed');
+  const cancelled = all.filter((a) => a.status === 'cancelled');
+
+  const totalRevenue = completed.reduce((sum, a) => {
+    const sCount = a.selectedServices?.length || 1;
+    return sum + (sCount * 450);
+  }, 0);
+
+  const popularServicesTally: Record<string, number> = {};
+  const vehicleTally: Record<string, number> = {};
+
+  for (const a of all.filter((x) => x.status !== 'cancelled')) {
+    for (const s of a.selectedServices || []) {
+      popularServicesTally[s.name] = (popularServicesTally[s.name] || 0) + 1;
+    }
+    const vType = a.vehicleType || 'sedan';
+    vehicleTally[vType] = (vehicleTally[vType] || 0) + 1;
+  }
+
+  const totalServices = Object.values(popularServicesTally).reduce((a, b) => a + b, 0) || 1;
+  const popularServices = Object.entries(popularServicesTally)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name, count]) => ({
+      name,
+      count,
+      share: `${Math.round((count / totalServices) * 100)}%`,
+    }));
+
+  const vehicleLabels: Record<string, string> = {
+    sedan: 'Sedan / Hatchback',
+    suv: 'SUV / Crossover',
+    pickup: 'Ticari / Minibüs',
+    motorcycle: 'Motosiklet',
+  };
+
+  const totalVehicles = Object.values(vehicleTally).reduce((a, b) => a + b, 0) || 1;
+  const vehicleDistribution = Object.entries(vehicleTally).map(([type, count]) => ({
+    type,
+    label: vehicleLabels[type] || type,
+    count,
+    share: `${Math.round((count / totalVehicles) * 100)}%`,
+  }));
+
+  return {
+    totalAppointments: all.length,
+    totalCompleted: completed.length,
+    totalCancelled: cancelled.length,
+    totalCustomers: customers.length,
+    totalRevenue,
+    averageWashMinutes: completed.length > 0 ? 45 : 0,
+    loyaltyMembersCount: loyalty.length,
+    loyaltyVouchersReadyCount: loyalty.filter((p) => p.stamps >= 5).length,
+    popularServices,
+    vehicleDistribution,
+    recentActivity: all.slice(0, 10),
+  };
+}
+
+// ============================================================================
+// 9. DATABASE SETUP & PURGE / RESET EXPORTS
+// ============================================================================
+
+export async function checkAndInitializeSchema(force: boolean = false): Promise<{
+  verified: boolean;
+  tables: string[];
+  message: string;
+}> {
+  const result = await setupD1DatabaseSchema(force);
+  return {
+    verified: result.success,
+    tables: result.tablesVerified,
+    message: result.message,
+  };
+}
+
+export async function resetDatabaseClean(): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const result = await resetD1DatabaseClean();
+  notifyDataChanged();
+  return {
+    success: result.success,
+    message: result.message,
+  };
+}
 
 export async function executeD1Sql<T = any>(
   sql: string,
@@ -864,18 +978,36 @@ export async function d1GetHealth(): Promise<D1HealthStatus> {
     console.warn('d1GetHealth failed:', err);
   }
 
+  const d1 = getD1();
+  const countRes = await d1.prepare("SELECT COUNT(*) as cnt FROM appointments;").first<{ cnt: number }>().catch(() => null);
+
   return {
     status: 'ok',
     platform: 'cloudflare-d1-active',
     d1Connected: true,
-    appointmentsCount: 0,
+    appointmentsCount: Number(countRes?.cnt || 0),
     serverTime: new Date().toISOString(),
   };
 }
 
-// Automatically trigger startup table check on service initialization
+// Startup: Wipe any lingering legacy localStorage demo keys and verify schema
 if (typeof window !== 'undefined') {
+  try {
+    // Purge legacy demo keys from localStorage so stale cached items never appear
+    const legacyKeys = [
+      'esse_local_appointments_v3',
+      'esse_loyalty_profiles_v2',
+      'esse_saved_customer_profile_v1',
+      'esse_saved_customer',
+      'esse_notification_events_v2',
+      'esse_customer_profile_v2',
+    ];
+    for (const k of legacyKeys) {
+      localStorage.removeItem(k);
+    }
+  } catch {}
+
   setTimeout(() => {
     checkAndInitializeSchema().catch(() => {});
-  }, 100);
+  }, 50);
 }
